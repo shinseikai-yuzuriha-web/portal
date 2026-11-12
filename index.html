@@ -2228,7 +2228,9 @@
         : '<button class="primary" data-st="完了">完了にする</button>') + '</div>';
     }
     var notes = '';
-    if (T.showNotes) {
+    // 自分用のタスク（担当＝頼んだ人）は連絡する相手がいないので、連絡の欄を出さない
+    var selfTask = t.assignee.toLowerCase() === t.creator.toLowerCase();
+    if (T.showNotes && !(selfTask && !T.notes.length)) {
       notes = '<div class="tk-sec"><h3>連絡</h3>' +
         (T.notes.length ? '<ul class="tk-notes">' + T.notes.map(function (n) {
           return '<li class="' + (n.mine ? 'mine' : '') + '"><div class="tk-nh">' + esc(n.byName) + '・' + esc(n.at) + '</div><div class="tk-nb">' + esc(n.body) + '</div></li>'; }).join('') + '</ul>'
