@@ -2140,7 +2140,7 @@
   function tabDefs() {
     var tabs = [['mine', '自分のタスク'], ['asked', '依頼したタスク'], ['others', T.me && T.me.seeAll ? '全職員のタスク' : '見られるタスク']];
     return tabs.filter(function (t) {
-      if (t[0] === 'asked') return T.me.isAdmin || T.tasks.some(isAsked);
+      if (t[0] === 'asked') return T.me.canAssign || T.tasks.some(isAsked);
       if (t[0] === 'others') return T.tasks.some(function (x) { return !isMine(x) && !isAsked(x); });
       return true;
     });
@@ -2262,16 +2262,17 @@
   }
   function renderForm() {
     var e = T.edit, isNew = !e.id;
-    var canAssign = T.me.isAdmin && (isNew || (T.open && T.open.canReassign));
+    var canAssign = T.me.canAssign && (isNew || (T.open && T.open.canReassign));
+    var assignees = T.users.filter(function (u) { return u.assignable || u.id.toLowerCase() === String(e.assignee).toLowerCase(); });
     var others = T.users.filter(function (u) { return u.id.toLowerCase() !== T.me.id.toLowerCase(); });
     var people = others.length ? others.map(function (u) {
       return '<label><input type="checkbox" data-vu="' + esc(u.id) + '"' + ((e.visUsers || []).map(function (x) { return x.toLowerCase(); }).indexOf(u.id.toLowerCase()) >= 0 ? ' checked' : '') + '> ' + esc(u.name) + '</label>'; }).join('')
       : '<span class="hint">選べる人がいません</span>';
     var assign = canAssign
-      ? '<label for="tkAssignee">担当</label><select id="tkAssignee">' + T.users.map(function (u) {
+      ? '<label for="tkAssignee">担当（だれに）</label><select id="tkAssignee">' + assignees.map(function (u) {
           return '<option value="' + esc(u.id) + '"' + (u.id.toLowerCase() === String(e.assignee).toLowerCase() ? ' selected' : '') + '>' + esc(u.name) +
             (u.id.toLowerCase() === T.me.id.toLowerCase() ? '（自分）' : '') + '</option>'; }).join('') + '</select>' +
-        '<p class="hint" style="margin:4px 0 0">ほかの人を選ぶと、その人への依頼になります。</p>'
+        '<p class="hint" style="margin:4px 0 0">ほかの人を選ぶと、その人への依頼になります。' + (T.me.isAdmin ? '' : '選べるのは、同じカテゴリの人だけです。') + '</p>'
       : '';
     $('tkDialogBody').innerHTML = '<div class="row"><b style="font-size:17px">' + (isNew ? '新しいタスク' : 'タスクを直す') + '</b><span class="spacer"></span><button class="small" data-act="cancel">やめる</button></div>' +
       '<p class="sh-note" style="margin-top:10px">患者様・利用者様のお名前は書かないでください（必要なときはIDで記入）。</p>' +
@@ -2367,7 +2368,8 @@
     var msg = $('userMsg');
     var box = document.createElement('div');
     box.id = 'uTaskBox';
-    box.innerHTML = '<label>タスク表</label><div class="checks"><label><input type="checkbox" id="uSeeAll"> 全員のタスクを見られる（理事長など）</label></div>' +
+    box.innerHTML = '<label>タスク表</label><div class="checks"><label><input type="checkbox" id="uSeeAll"> 全員のタスクを見られる（理事長など）</label>' +
+      '<label><input type="checkbox" id="uCanAssign"> タスクを依頼できる（同じカテゴリの人に。上長など）</label></div>' +
       '<label for="uTaskVis">この人のタスクの、いつもの公開先</label><select id="uTaskVis" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit">' +
       '<option value="self">担当者と頼んだ人だけ</option><option value="cats">カテゴリの人にも見せる</option></select>' +
       '<div class="checks hidden" id="uTaskCats"></div><p class="hint" style="margin:4px 0 0">新しいタスクを登録するときの初期値です（例：事務長のタスクは事務部門の人に見せる）。タスクごとに変えられます。</p>';
@@ -2378,6 +2380,7 @@
   window.openUserDialog = function (u) {
     prevOpenUser(u);
     $('uSeeAll').checked = !!(u && u.seeAllTasks);
+    $('uCanAssign').checked = !!(u && u.canAssignTasks);
     $('uTaskVis').value = (u && u.taskVis === 'cats') ? 'cats' : 'self';
     var sel = (u && u.taskVisCats) || [];
     $('uTaskCats').innerHTML = state.cats.map(function (c) {
@@ -2392,6 +2395,7 @@
       role: document.querySelector('input[name=uRole]:checked').value,
       cats: Array.prototype.map.call(document.querySelectorAll('#uCats input:checked'), function (c) { return c.value; }),
       seeAllTasks: $('uSeeAll').checked,
+      canAssignTasks: $('uCanAssign').checked,
       taskVis: $('uTaskVis').value,
       taskVisCats: Array.prototype.map.call(document.querySelectorAll('#uTaskCats input:checked'), function (c) { return c.value; })
     };
@@ -2408,7 +2412,9 @@
     var rows = document.querySelectorAll('#userRows tr');
     var list = state.users.filter(function (u) { var q = $('userFilter').value.trim().toLowerCase(); return !q || u.id.toLowerCase().indexOf(q) >= 0 || u.name.toLowerCase().indexOf(q) >= 0; });
     list.forEach(function (u, i) {
-      if (u.seeAllTasks && rows[i] && rows[i].children[1]) rows[i].children[1].insertAdjacentHTML('beforeend', ' <span class="tag admin">全タスク閲覧</span>');
+      if (!rows[i] || !rows[i].children[1]) return;
+      if (u.seeAllTasks) rows[i].children[1].insertAdjacentHTML('beforeend', ' <span class="tag admin">全タスク閲覧</span>');
+      if (u.canAssignTasks && u.role !== ROLE_ADMIN) rows[i].children[1].insertAdjacentHTML('beforeend', ' <span class="tag">依頼できる</span>');
     });
   };
 })();
