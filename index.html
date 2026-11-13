@@ -1988,6 +1988,14 @@
 
 <!-- タスク表の画面（Supabase版ポータル）。shinsei.html のあとに読み込む -->
 <style>
+  /* 申請の画面と共通の部品（タスクだけのシステムでも使う） */
+  .sh-kanji { flex: none; width: 38px; height: 38px; border-radius: 8px; background: var(--primary-light, #e6f0ec); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; }
+  .sh-note { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin: 0 0 12px; }
+  .sh-req { font-size: 11px; color: var(--danger); border: 1px solid var(--danger); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-weight: normal; }
+  .sh-mid { flex: 1; min-width: 0; }
+  .sh-homecard { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .sh-homecard .sh-mid { min-width: 200px; }
   #view-tasks { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
   .tk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
   .tk-head h2 { margin: 0; }
@@ -2211,7 +2219,7 @@
     if (T.edit) { renderForm(); return; }
     var t = T.open;
     var head = '<div class="row"><b style="font-size:17px;overflow-wrap:anywhere;flex:1;min-width:0">' + esc(t.title) + '</b><button class="small" data-act="close">閉じる</button></div>';
-    var rows = '<dl class="tk-rows"><dt>状況</dt><dd>' + esc(t.status) + (t.doneAt ? '（' + esc(t.doneAt) + ' 完了）' : '') + '</dd>' +
+    var rows = '<dl class="tk-rows"><dt>番号</dt><dd>T' + esc(t.id) + '</dd><dt>状況</dt><dd>' + esc(t.status) + (t.doneAt ? '（' + esc(t.doneAt) + ' 完了）' : '') + '</dd>' +
       '<dt>期限</dt><dd>' + (t.due ? esc(fmtDue(t.due)) : '—') + '</dd>' +
       '<dt>担当</dt><dd>' + esc(t.assigneeName) + '</dd>' +
       '<dt>頼んだ人</dt><dd>' + esc(t.creatorName) + '</dd>' +
@@ -2370,6 +2378,7 @@
     box.id = 'uTaskBox';
     box.innerHTML = '<label>タスク表</label><div class="checks"><label><input type="checkbox" id="uSeeAll"> 全員のタスクを見られる（理事長など）</label>' +
       '<label><input type="checkbox" id="uCanAssign"> タスクを依頼できる（同じカテゴリの人に。上長など）</label></div>' +
+      '<label for="uMm">Mattermost のユーザー名（@ は付けない・任意）</label><input type="text" id="uMm" autocapitalize="off" placeholder="例：kasuga">' +
       '<label for="uTaskVis">この人のタスクの、いつもの公開先</label><select id="uTaskVis" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit">' +
       '<option value="self">担当者と頼んだ人だけ</option><option value="cats">カテゴリの人にも見せる</option></select>' +
       '<div class="checks hidden" id="uTaskCats"></div><p class="hint" style="margin:4px 0 0">新しいタスクを登録するときの初期値です（例：事務長のタスクは事務部門の人に見せる）。タスクごとに変えられます。</p>';
@@ -2381,6 +2390,7 @@
     prevOpenUser(u);
     $('uSeeAll').checked = !!(u && u.seeAllTasks);
     $('uCanAssign').checked = !!(u && u.canAssignTasks);
+    $('uMm').value = (u && u.mmUsername) || '';
     $('uTaskVis').value = (u && u.taskVis === 'cats') ? 'cats' : 'self';
     var sel = (u && u.taskVisCats) || [];
     $('uTaskCats').innerHTML = state.cats.map(function (c) {
@@ -2396,6 +2406,7 @@
       cats: Array.prototype.map.call(document.querySelectorAll('#uCats input:checked'), function (c) { return c.value; }),
       seeAllTasks: $('uSeeAll').checked,
       canAssignTasks: $('uCanAssign').checked,
+      mmUsername: $('uMm').value.trim(),
       taskVis: $('uTaskVis').value,
       taskVisCats: Array.prototype.map.call(document.querySelectorAll('#uTaskCats input:checked'), function (c) { return c.value; })
     };
