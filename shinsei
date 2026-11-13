@@ -2006,10 +2006,15 @@
 <!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が shinsei と 真成会 申請・届出 を入れる） -->
 <script>
   (function () {
-    var APP = 'shinsei', TITLE = '真成会 申請・届出';
+    var APP = 'shinsei', TITLE = '真成会 申請・届出', NAME = '申請・届出';
     document.title = TITLE;
     $('appTitle').textContent = TITLE;
-    $('loginTitle').textContent = TITLE + ' ログイン';
+    // ログインの見出しは「真成会」と「〇〇ログイン」の2行
+    var lt = $('loginTitle');
+    lt.textContent = '';
+    lt.appendChild(document.createTextNode('真成会'));
+    lt.appendChild(document.createElement('br'));
+    lt.appendChild(document.createTextNode(NAME + 'ログイン'));
     // 「ホーム」はこのシステムの画面そのものにする
     var prev = window.showView;
     window.showView = function (name) {
