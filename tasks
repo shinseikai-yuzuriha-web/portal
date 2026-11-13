@@ -1,0 +1,1645 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>真成会ポータル</title>
+<script>
+  // ===== ここに Supabase の2つを貼る（Project Settings → API） ===================
+  var SUPABASE_URL = "https://lzkeaetpykhdrwwwspjy.supabase.co";          // Project URL
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6a2VhZXRweWtoZHJ3d3dzcGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNDM3MTgsImV4cCI6MjEwOTgxOTcxOH0.w_iThhR7s9ZF2R_Co3OIedwdQcsFGSb7WqX4TTTE0uM";      // anon public（または Publishable）キー
+  // ※ service_role（Secret）キーは絶対に貼らないこと
+  // ============================================================================
+
+  // GAS の google.script.run と同じ書き方で、Supabase の api_ 関数を呼ぶ
+  (function () {
+    function snake(n) { return n.replace(/[A-Z]/g, function (c) { return '_' + c.toLowerCase(); }); }
+    function baseUrl() {
+      // 余分な空白や、うっかり付けた /rest/v1 などを取り除く
+      return String(SUPABASE_URL).trim().replace(/\/+$/, '').replace(/\/(rest|auth)\/v1.*$/, '');
+    }
+    /** つながらなかった理由を、画面に出せる言葉にする */
+    function explain(status, body, fnName) {
+      var b = body || {};
+      var code = b.code || '', msg = String(b.message || b.msg || b.error || '');
+      var head = '接続エラー（' + (status ? 'HTTP ' + status : 'ネットワーク') + (code ? '・' + code : '') + '）：';
+      if (!status) return head + 'Supabase に届きませんでした。SUPABASE_URL が「https://〇〇〇.supabase.co」の形か、インターネットにつながっているか確認してください。';
+      if (status === 401 || /api ?key|jwt|secret/i.test(msg)) {
+        if (/secret/i.test(msg)) return head + 'Secret キーが貼られています。anon public（または Publishable）キーに替えてください。';
+        return head + 'キーが受け付けられませんでした。SUPABASE_ANON_KEY に anon public（または Publishable）キーを、前後の空白なしで貼り直してください。';
+      }
+      if (code === 'PGRST202' || (status === 404 && /function|schema cache/i.test(msg))) {
+        return head + '関数「' + fnName + '」が見つかりません。SQL Editor（上の選択欄がデータベースになっていること）で portal.sql をもう一度「Run」してください。';
+      }
+      if (status === 404) return head + 'つなぎ先が見つかりません。SUPABASE_URL の打ち間違い、または Project Settings → Data API が「有効」になっているか確認してください。';
+      if (code === '42501' || status === 403) return head + '関数を呼ぶ許可がありません。portal.sql をもう一度「Run」してください。';
+      return head + (msg || '原因がわかりませんでした') ;
+    }
+    function runner(ok, ng) {
+      return new Proxy({}, {
+        get: function (_, k) {
+          if (k === 'withSuccessHandler') return function (f) { return runner(f, ng); };
+          if (k === 'withFailureHandler') return function (f) { return runner(ok, f); };
+          return function () {
+            var args = Array.prototype.slice.call(arguments);
+            var fnName = snake(String(k));
+            var key = String(SUPABASE_ANON_KEY).trim();
+            var headers = { 'apikey': key, 'Content-Type': 'application/json' };
+            if (/^eyJ/.test(key)) headers.Authorization = 'Bearer ' + key;
+            var fail = function (status, body) {
+              var m = explain(status, body, fnName);
+              console.error(m, body);
+              // 画面に理由を出す（ログイン画面などのメッセージ欄に表示される）
+              if (ok) ok({ ok: false, message: m }); else if (ng) ng(new Error(m));
+            };
+            fetch(baseUrl() + '/rest/v1/rpc/' + fnName, {
+              method: 'POST', headers: headers, body: JSON.stringify({ a: args })
+            }).then(function (r) {
+              return r.text().then(function (t) {
+                var j = null; try { j = JSON.parse(t); } catch (e) { j = { message: t }; }
+                if (!r.ok) { fail(r.status, j); return; }
+                if (ok) ok(j);
+              });
+            }, function () { fail(0, null); });
+          };
+        }
+      });
+    }
+    window.google = { script: { run: runner(null, null) } };
+  })();
+</script>
+
+<base target="_top">
+<meta charset="utf-8">
+<!-- ポータル全体のデザイン（米須さん作成・2026-11-13）。新しい版を作るときはこれを使う -->
+<style>
+  :root {
+    /* 最先端SaaSのトーン（Stripe / Vercelライクなネイビー＆パープルインディゴ） */
+    --bg: #f8fafc; 
+    --card: #ffffff; 
+    --text: #0f172a; 
+    --muted: #64748b;
+    --line: #e2e8f0; 
+    --primary: #6366f1; 
+    --primary-text: #ffffff;
+    --danger: #ef4444; 
+    --warn-bg: #fffbeb; 
+    --warn-line: #fde68a; 
+    --ok-bg: #f0fdf4;
+
+    /* PRO仕様のアニメーション・影・グラデーション用変数 */
+    --primary-hover: #4f46e5;
+    --primary-light: #eef2ff;
+    --primary-grad: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    --shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.05), 0 1px 2px 0 rgba(0,0,0,0.03);
+    --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+    --shadow-lg: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 24px;
+    --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  body { 
+    margin: 0; 
+    background: var(--bg); 
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    font-size: 14px; 
+    line-height: 1.6; 
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+  }
+
+  /* 最先端ヘッダー（グラスモーフィズム） */
+  header { 
+    background: rgba(255, 255, 255, 0.75); 
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8); 
+    padding: 14px 28px;
+    display: flex; 
+    align-items: center; 
+    justify-content: space-between; 
+    gap: 16px;
+    box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  header h1 { 
+    font-size: 18px; 
+    font-weight: 800;
+    margin: 0; 
+    background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.03em;
+  }
+  header .who { 
+    font-size: 12px; 
+    color: var(--muted);
+    font-weight: 600;
+    background: rgba(241, 245, 249, 0.8);
+    padding: 5px 14px;
+    border-radius: 9999px;
+    border: 1px solid rgba(226, 232, 240, 0.6);
+  }
+
+  /* メインレイアウト */
+  main { 
+    max-width: 1040px; 
+    margin: 0 auto; 
+    padding: 36px 20px 60px; 
+  }
+
+  /* 洗練されたカードデザイン */
+  .card { 
+    background: var(--card); 
+    border: 1px solid rgba(226, 232, 240, 0.8); 
+    border-radius: var(--radius-md); 
+    padding: 32px; 
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-md);
+    transition: var(--transition);
+  }
+  .narrow { 
+    max-width: 420px; 
+    margin: 70px auto; 
+  }
+
+  /* 見出し・ラベル */
+  h2 { 
+    font-size: 20px; 
+    font-weight: 800;
+    margin: 0 0 20px; 
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+  label { 
+    display: block; 
+    font-size: 12px; 
+    font-weight: 700;
+    color: #475569; 
+    margin: 16px 0 6px; 
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* 入力フォーム（最先端リングエフェクト） */
+  input[type=text], input[type=password], input[type=date], select, textarea { 
+    width: 100%; 
+    padding: 11px 16px; 
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm); 
+    font-size: 14px; 
+    font-family: inherit;
+    color: var(--text);
+    background: #f8fafc;
+    transition: var(--transition);
+    outline: none;
+  }
+  input[type=text]:focus, input[type=password]:focus, input[type=date]:focus, select:focus, textarea:focus {
+    background: var(--card);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  }
+  textarea { 
+    min-height: 90px; 
+    resize: vertical;
+  }
+  select {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 16px;
+    padding-right: 40px;
+    appearance: none;
+  }
+
+  /* ボタン（スタイリッシュな立体感） */
+  button { 
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700; 
+    padding: 9px 18px; 
+    border-radius: var(--radius-sm); 
+    border: 1px solid var(--line);
+    background: var(--card); 
+    color: var(--text); 
+    cursor: pointer; 
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  button:hover:not(:disabled) {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+  }
+  button.primary { 
+    background: var(--primary-grad); 
+    color: var(--primary-text); 
+    border: none; 
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  }
+  button.primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+    transform: translateY(-2px);
+  }
+  button.danger { 
+    color: var(--danger); 
+    border-color: #fecaca; 
+    background: #fff5f5; 
+  }
+  button.danger:hover:not(:disabled) {
+    background: #fee2e2;
+    border-color: var(--danger);
+  }
+  button.small { 
+    padding: 6px 12px; 
+    font-size: 12px; 
+    border-radius: 6px;
+  }
+  button:disabled { 
+    opacity: 0.4; 
+    cursor: not-allowed; 
+  }
+
+  /* レイアウト補助 */
+  .full { width: 100%; margin-top: 24px; padding: 13px; font-size: 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .spacer { flex: 1; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+  /* メッセージ表示 */
+  .msg { 
+    padding: 12px 16px; 
+    border-radius: var(--radius-sm); 
+    margin: 16px 0 0; 
+    font-size: 13px; 
+    font-weight: 600;
+    display: none; 
+    line-height: 1.5;
+  }
+  .msg.error { 
+    display: block; 
+    background: #fef2f2; 
+    color: var(--danger); 
+    border: 1px solid #fecaca;
+  }
+  .msg.info { 
+    display: block; 
+    background: var(--ok-bg); 
+    color: #166534; 
+    border: 1px solid #bbf7d0;
+  }
+
+  /* カテゴリカード（グラバー感） */
+  .grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); 
+    gap: 18px; 
+  }
+  .cat { 
+    border: 1px solid var(--line); 
+    border-radius: var(--radius-md); 
+    padding: 24px; 
+    background: var(--card); 
+    transition: var(--transition);
+  }
+  .cat b { 
+    display: block; 
+    font-size: 16px; 
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .cat.link { cursor: pointer; }
+  .cat.link:hover { 
+    border-color: var(--primary); 
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-4px);
+  }
+
+  /* タブ */
+  .tabs { 
+    display: flex; 
+    gap: 8px; 
+    border-bottom: 1px solid var(--line); 
+    margin-bottom: 24px; 
+    flex-wrap: wrap; 
+  }
+  .tabs button { 
+    border: none; 
+    border-bottom: 2px solid transparent; 
+    border-radius: 0; 
+    background: none; 
+    padding: 10px 18px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .tabs button:hover {
+    color: var(--text);
+    background: none;
+  }
+  .tabs button.active { 
+    border-bottom-color: var(--primary); 
+    color: var(--primary); 
+    font-weight: 700; 
+    background: none;
+  }
+
+  /* テーブル（モダンミニマル） */
+  .tablewrap { 
+    overflow-x: auto; 
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    margin-top: 10px;
+  }
+  table { 
+    border-collapse: collapse; 
+    width: 100%; 
+    font-size: 13px; 
+  }
+  th, td { 
+    border-bottom: 1px solid var(--line); 
+    padding: 14px 18px; 
+    text-align: left; 
+    vertical-align: middle; 
+    white-space: nowrap; 
+  }
+  th { 
+    background: #f8fafc;
+    color: var(--muted); 
+    font-weight: 700; 
+    font-size: 11px; 
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+
+  /* タグ・ピルバッジ */
+  .tag { 
+    display: inline-block; 
+    padding: 3px 10px; 
+    border-radius: 9999px; 
+    background: #f1f5f9; 
+    color: #475569;
+    font-size: 11px; 
+    font-weight: 700;
+    margin: 1px 2px; 
+  }
+  .tag.admin { 
+    background: var(--primary-light); 
+    color: var(--primary); 
+  }
+  .tag.stopped { 
+    background: #fef2f2; 
+    color: var(--danger); 
+  }
+  .badge { 
+    display: inline-block; 
+    min-width: 18px; 
+    padding: 0 6px; 
+    margin-left: 6px; 
+    border-radius: 9999px; 
+    background: var(--danger); 
+    color: #fff; 
+    font-size: 10px; 
+    font-weight: 800; 
+    line-height: 18px; 
+    text-align: center; 
+  }
+  .newtag { 
+    display: inline-block; 
+    padding: 2px 8px; 
+    border-radius: 6px; 
+    background: #fef2f2; 
+    color: var(--danger); 
+    font-size: 11px; 
+    font-weight: 700; 
+    margin-right: 6px; 
+    border: 1px solid #fecaca;
+  }
+  .newtag.rep { 
+    background: var(--primary-light); 
+    color: var(--primary); 
+    border-color: #c7d2fe;
+  }
+
+  /* チェックボックス・ラジオボタン */
+  .checks label, .radio label { 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 8px; 
+    color: var(--text); 
+    font-size: 14px; 
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .checks label { margin: 8px 0; display: flex; }
+  .radio label { margin: 6px 20px 6px 0; }
+  input[type=checkbox], input[type=radio] {
+    accent-color: var(--primary);
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  /* 高級感のあるモーダル（極上ブラー） */
+  .overlay { 
+    position: fixed; 
+    inset: 0; 
+    background: rgba(15, 23, 42, 0.55); 
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: none; 
+    align-items: flex-start; 
+    justify-content: center; 
+    padding: 60px 16px; 
+    overflow-y: auto; 
+    z-index: 10; 
+  }
+  .overlay.show { display: flex; }
+  .dialog { 
+    background: var(--card); 
+    border-radius: var(--radius-lg); 
+    padding: 36px; 
+    width: 100%; 
+    max-width: 480px; 
+    box-shadow: var(--shadow-lg);
+    border: 1px solid rgba(255,255,255,0.8);
+    animation: dialogPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes dialogPop {
+    from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .pwbox { 
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; 
+    font-size: 26px; 
+    font-weight: 800;
+    letter-spacing: 4px; 
+    text-align: center; 
+    padding: 18px; 
+    background: var(--warn-bg); 
+    border: 2px dashed var(--warn-line); 
+    border-radius: var(--radius-sm); 
+    margin: 20px 0; 
+    color: #d97706;
+    user-select: all; 
+  }
+
+  /* ファイルリスト・パンくず */
+  .crumbs { 
+    font-size: 13px; 
+    font-weight: 600;
+    margin-bottom: 20px; 
+    color: var(--muted);
+  }
+  .crumbs a { 
+    color: var(--primary); 
+    cursor: pointer; 
+    text-decoration: none; 
+    font-weight: 700;
+  }
+  .crumbs a:hover { text-decoration: underline; }
+  .flist { list-style: none; margin: 0; padding: 0; }
+  .flist li { 
+    display: flex; 
+    align-items: center; 
+    gap: 14px; 
+    padding: 14px 12px; 
+    border-bottom: 1px solid var(--line); 
+    transition: var(--transition);
+  }
+  .flist li:hover { background: #f8fafc; }
+  .flist li:last-child { border-bottom: none; }
+  .flist .ic { 
+    width: 40px; 
+    height: 28px;
+    line-height: 28px;
+    text-align: center; 
+    font-size: 10px; 
+    font-weight: 800; 
+    color: #fff; 
+    border-radius: 6px; 
+    flex: none; 
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .flist .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+  .flist .nm.folder { cursor: pointer; color: var(--primary); font-weight: 700; }
+  .flist .nm.folder:hover { text-decoration: underline; }
+  .flist .meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  
+  .ic.folder { background: #f59e0b; } 
+  .ic.doc { background: #3b82f6; } 
+  .ic.sheet { background: #10b981; }
+  .ic.slide { background: #f97316; } 
+  .ic.pdf { background: #ef4444; } 
+  .ic.image { background: #a855f7; } 
+  .ic.file { background: #64748b; }
+
+  /* ビューア */
+  .viewer { max-width: 960px; height: calc(100vh - 100px); display: flex; flex-direction: column; }
+  .viewer .body { 
+    flex: 1; 
+    min-height: 0; 
+    margin-top: 16px; 
+    border: 1px solid var(--line); 
+    border-radius: var(--radius-sm); 
+    overflow: auto; 
+    background: #cbd5e1; 
+  }
+  .viewer iframe { width: 100%; height: 100%; border: 0; }
+  .viewer img { max-width: 100%; display: block; margin: 0 auto; }
+
+  /* タスクステータス・表示関連 */
+  .tstatus { 
+    display: inline-block; 
+    padding: 3px 12px; 
+    border-radius: 9999px; 
+    font-size: 11px; 
+    font-weight: 700;
+  }
+  .tstatus.s0 { background: #f1f5f9; color: #475569; } 
+  .tstatus.s1 { background: #fef3c7; color: #b45309; } 
+  .tstatus.s2 { background: var(--ok-bg); color: #15803d; }
+  .overdue { color: var(--danger); font-weight: 700; }
+  tr.done td { color: var(--muted); background: #fafafa; }
+  tr.done td .ttl { text-decoration: line-through; opacity: 0.6; }
+  .ttl { font-weight: 600; white-space: normal; color: var(--text); }
+  .tdetail { font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-top: 4px; }
+  .scope .checks { margin-left: 20px; margin-top: 6px; }
+  .treport { 
+    margin-top: 8px; 
+    padding: 10px 14px; 
+    border-left: 3px solid var(--primary); 
+    background: #f8fafc; 
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: 12px; 
+    white-space: pre-wrap; 
+    color: #334155;
+  }
+
+  /* 非表示・ローディング (※機能維持用) */
+  .hidden { display: none !important; }
+  #loading { 
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    right: 0; 
+    height: 3px; 
+    background: var(--primary-grad); 
+    display: none; 
+    z-index: 20; 
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+  }
+
+  /* 「body .sh-」で始まるスタイル（申請画面用） */
+  body .sh-form-group { margin-bottom: 20px; }
+  body .sh-label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; }
+  body .sh-input { width: 100%; padding: 11px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  body .sh-btn { background: var(--primary-grad); color: var(--primary-text); padding: 11px 22px; border: none; border-radius: var(--radius-sm); cursor: pointer; font-weight: 700; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25); }
+</style>
+
+</head>
+<body>
+<div id="loading"></div>
+
+<header id="appHeader" class="hidden">
+  <h1 id="appTitle"></h1>
+  <div class="row">
+    <span class="who" id="whoami"></span>
+    <button class="small" onclick="showView('home')">ホーム</button>
+    <button class="small hidden" id="adminBtn" onclick="openAdmin()">管理</button>
+    <button class="small" onclick="showView('changePw')">PW変更</button>
+    <button class="small" onclick="logout()">ログアウト</button>
+  </div>
+</header>
+
+<main>
+  <!-- ログイン -->
+  <section id="view-login" class="card narrow">
+    <h2 id="loginTitle"></h2>
+    <form onsubmit="login(event)">
+      <label for="loginId">ID</label>
+      <input type="text" id="loginId" autocomplete="username" autocapitalize="off">
+      <label for="loginPw">パスワード</label>
+      <input type="password" id="loginPw" autocomplete="current-password">
+      <button class="primary full" type="submit">ログイン</button>
+    </form>
+    <div class="msg" id="loginMsg"></div>
+  </section>
+
+  <!-- PW変更 -->
+  <section id="view-changePw" class="card narrow hidden">
+    <h2>パスワード変更</h2>
+    <p class="hint" id="mustChangeNote">初回ログインのため、パスワードを変更してください。</p>
+    <form onsubmit="changePw(event)">
+      <label for="oldPw">今のパスワード</label>
+      <input type="password" id="oldPw" autocomplete="current-password">
+      <label for="newPw">新しいパスワード（8文字以上・英字と数字を含む）</label>
+      <input type="password" id="newPw" autocomplete="new-password">
+      <label for="newPw2">新しいパスワード（確認）</label>
+      <input type="password" id="newPw2" autocomplete="new-password">
+      <button class="primary full" type="submit">変更する</button>
+    </form>
+    <div class="msg" id="pwMsg"></div>
+  </section>
+
+  <!-- ホーム -->
+  <section id="view-home" class="hidden">
+    <div class="card">
+      <h2>使えるカテゴリ</h2>
+      <div class="grid" id="myCats"></div>
+      <p class="hint" id="noCats"></p>
+    </div>
+  </section>
+
+  <!-- ファイル一覧 -->
+  <section id="view-files" class="hidden">
+    <div class="card">
+      <div class="crumbs" id="crumbs"></div>
+      <ul class="flist" id="fileList"></ul>
+      <p class="hint" id="filesEmpty"></p>
+      <p class="hint">見るだけの画面です。ファイルの追加・変更は管理者が行います。</p>
+    </div>
+  </section>
+
+  <!-- 管理 -->
+  <section id="view-admin" class="hidden">
+    <div class="card">
+      <div class="tabs">
+        <button id="tab-users" class="active" onclick="adminTab('users')">ユーザー</button>
+        <button id="tab-cats" onclick="adminTab('cats')">カテゴリ</button>
+        <button id="tab-log" onclick="adminTab('log')">操作ログ</button>
+      </div>
+
+      <div id="pane-users">
+        <div class="row" style="margin-bottom:8px">
+          <input type="text" id="userFilter" placeholder="ID・氏名で絞り込み" oninput="renderUsers()" style="max-width:240px">
+          <span class="spacer"></span>
+          <button class="primary" onclick="openUserDialog(null)">＋ ユーザー追加</button>
+        </div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>ID</th><th>氏名</th><th>役割</th><th>カテゴリ</th><th>状態</th><th>最終ログイン</th><th></th></tr></thead>
+          <tbody id="userRows"></tbody>
+        </table></div>
+      </div>
+
+      <div id="pane-cats" class="hidden">
+        <div class="row" style="margin-bottom:8px">
+          <span class="hint">カテゴリ名はいつでも変えられます。削除すると、全ユーザーからそのカテゴリが外れます。</span>
+          <span class="spacer"></span>
+          <button class="primary" onclick="openCatDialog(null)">＋ カテゴリ追加</button>
+        </div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>ID</th><th>名前</th><th>説明</th><th>フォルダ</th><th>人数</th><th></th></tr></thead>
+          <tbody id="catRows"></tbody>
+        </table></div>
+      </div>
+
+      <div id="pane-log" class="hidden">
+        <p class="hint">新しい順に最大200件</p>
+        <div class="tablewrap"><table>
+          <thead><tr><th>日時</th><th>操作者</th><th>操作</th><th>対象</th><th>詳細</th></tr></thead>
+          <tbody id="logRows"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ユーザー編集 -->
+<div class="overlay" id="userDialog">
+  <div class="dialog">
+    <h2 id="userDialogTitle"></h2>
+    <label for="uId">ID（半角英数字3〜30文字・後から変更不可）</label>
+    <input type="text" id="uId" autocapitalize="off">
+    <label for="uName">氏名</label>
+    <input type="text" id="uName">
+    <label>役割</label>
+    <div class="radio">
+      <label><input type="radio" name="uRole" value="一般" checked> 一般</label>
+      <label><input type="radio" name="uRole" value="管理者"> 管理者（理事長・事務長）</label>
+    </div>
+    <label>カテゴリ（複数選べます）</label>
+    <div class="checks" id="uCats"></div>
+    <div class="msg" id="userMsg"></div>
+    <div class="row" style="margin-top:16px">
+      <button onclick="closeDialog('userDialog')">キャンセル</button>
+      <span class="spacer"></span>
+      <button class="primary" onclick="saveUser()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- カテゴリ編集 -->
+<div class="overlay" id="catDialog">
+  <div class="dialog">
+    <h2 id="catDialogTitle"></h2>
+    <label for="cName">カテゴリ名</label>
+    <input type="text" id="cName">
+    <label for="cDesc">説明（任意）</label>
+    <input type="text" id="cDesc">
+    <label for="cFolder">ドライブのフォルダ（URLを貼り付け・任意）</label>
+    <input type="text" id="cFolder" placeholder="https://drive.google.com/drive/folders/...">
+    <p class="hint">フォルダは「システム管理用アカウント」に共有しておいてください。このカテゴリの人は、中身を見るだけできます。</p>
+    <div class="msg" id="catMsg"></div>
+    <div class="row" style="margin-top:16px">
+      <button onclick="closeDialog('catDialog')">キャンセル</button>
+      <span class="spacer"></span>
+      <button class="primary" onclick="saveCat()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 初期PW表示 -->
+<div class="overlay" id="pwDialog">
+  <div class="dialog">
+    <h2>初期パスワード</h2>
+    <p id="pwDialogFor"></p>
+    <div class="pwbox" id="pwDialogValue"></div>
+    <p class="hint">この画面を閉じると二度と表示されません。本人に直接渡してください。本人は初回ログイン時に変更します。</p>
+    <button class="primary full" onclick="closeDialog('pwDialog')">控えたので閉じる</button>
+  </div>
+</div>
+
+<!-- ファイル表示 -->
+<div class="overlay" id="viewerDialog">
+  <div class="dialog viewer">
+    <div class="row">
+      <b id="viewerName" style="overflow-wrap:anywhere"></b>
+      <span class="spacer"></span>
+      <a id="viewerDownload" download><button class="small">ダウンロード</button></a>
+      <button class="small" onclick="closeViewer()">閉じる</button>
+    </div>
+    <div class="body" id="viewerBody"></div>
+  </div>
+</div>
+
+<!-- 確認 -->
+<div class="overlay" id="confirmDialog">
+  <div class="dialog">
+    <h2 id="confirmTitle"></h2>
+    <p id="confirmText"></p>
+    <div class="row" style="margin-top:16px">
+      <button id="confirmCancel" onclick="closeDialog('confirmDialog')">やめる</button>
+      <span class="spacer"></span>
+      <button class="danger" id="confirmOk">実行する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var APP_NAME = "真成会ポータル";
+  var ROLE_ADMIN = '管理者';
+  var state = { token: null, me: null, users: [], cats: [], editingUser: null, editingCat: null };
+
+  document.getElementById('appTitle').textContent = APP_NAME;
+  document.getElementById('loginTitle').textContent = APP_NAME + ' ログイン';
+
+  // ---- 共通 ----
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function $(id) { return document.getElementById(id); }
+  function setMsg(id, text, kind) { var el = $(id); el.textContent = text || ''; el.className = 'msg ' + (text ? (kind || 'error') : ''); }
+
+  /** サーバー関数を呼ぶ。失敗時の共通処理つき */
+  function call(fn, args, onOk, msgId) {
+    $('loading').style.display = 'block';
+    var runner = google.script.run
+      .withSuccessHandler(function (res) {
+        $('loading').style.display = 'none';
+        if (res && res.ok) { onOk(res); return; }
+        var m = (res && res.message) || 'エラーが発生しました';
+        if (res && res.relogin) { resetToLogin(m); return; }
+        if (msgId) setMsg(msgId, m); else alertBox(m);
+      })
+      .withFailureHandler(function (err) {
+        $('loading').style.display = 'none';
+        var m = '通信エラーが発生しました。もう一度お試しください。';
+        if (msgId) setMsg(msgId, m); else alertBox(m);
+        console.error(err);
+      });
+    runner[fn].apply(runner, args);
+  }
+
+  function alertBox(text) {
+    $('confirmTitle').textContent = 'お知らせ';
+    $('confirmText').textContent = text;
+    $('confirmOk').classList.add('hidden');
+    $('confirmCancel').textContent = '閉じる';
+    $('confirmDialog').classList.add('show');
+  }
+  function confirmBox(title, text, onOk) {
+    $('confirmTitle').textContent = title;
+    $('confirmText').textContent = text;
+    var ok = $('confirmOk');
+    ok.classList.remove('hidden');
+    $('confirmCancel').textContent = 'やめる';
+    ok.onclick = function () { closeDialog('confirmDialog'); onOk(); };
+    $('confirmDialog').classList.add('show');
+  }
+  function closeDialog(id) { $(id).classList.remove('show'); }
+
+  function showView(name) {
+    if (!state.me) name = 'login';
+    if (state.me && state.me.mustChange) name = 'changePw';
+    ['login', 'changePw', 'home', 'files', 'admin'].forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== name); });
+    $('appHeader').classList.toggle('hidden', !state.me);
+    if (name === 'changePw') {
+      $('mustChangeNote').classList.toggle('hidden', !(state.me && state.me.mustChange));
+      ['oldPw', 'newPw', 'newPw2'].forEach(function (i) { $(i).value = ''; });
+      setMsg('pwMsg', '');
+    }
+    if (name === 'home') renderHome();
+  }
+
+  function resetToLogin(message) {
+    state.token = null; state.me = null;
+    document.querySelectorAll('.overlay').forEach(function (o) { o.classList.remove('show'); });
+    showView('login');
+    setMsg('loginMsg', message || '');
+  }
+
+  // ---- ログイン ----
+  function login(e) {
+    e.preventDefault();
+    setMsg('loginMsg', '');
+    call('apiLogin', [$('loginId').value, $('loginPw').value], function (res) {
+      state.token = res.token;
+      setMe(res.me);
+      $('loginPw').value = '';
+      showView('home');
+    }, 'loginMsg');
+  }
+
+  function setMe(me) {
+    state.me = me;
+    $('whoami').textContent = me.name + '（' + me.role + '）';
+    $('adminBtn').classList.toggle('hidden', me.role !== ROLE_ADMIN);
+  }
+
+  function logout() {
+    var t = state.token;
+    resetToLogin('ログアウトしました');
+    $('loginMsg').className = 'msg info';
+    if (t) google.script.run.apiLogout(t);
+  }
+
+  function changePw(e) {
+    e.preventDefault();
+    if ($('newPw').value !== $('newPw2').value) { setMsg('pwMsg', '新しいパスワードが一致しません'); return; }
+    call('apiChangePassword', [state.token, $('oldPw').value, $('newPw').value], function () {
+      call('apiMe', [state.token], function (res) {
+        setMe(res.me);
+        showView('home');
+      });
+    }, 'pwMsg');
+  }
+
+  // ---- ホーム ----
+  function renderHome() {
+    var cats = (state.me && state.me.categories) || [];
+    $('myCats').innerHTML = cats.map(function (c) {
+      return '<div class="cat' + (c.hasFolder ? ' link' : '') + '" data-cat="' + esc(c.id) + '"><b>' + esc(c.name) + '</b><span class="hint">' +
+        esc(c.desc || (c.hasFolder ? 'クリックで資料を見る' : 'まだ資料フォルダが設定されていません')) + '</span></div>';
+    }).join('');
+    $('noCats').textContent = cats.length ? '' : 'まだカテゴリが割り当てられていません。管理者に連絡してください。';
+  }
+
+  // ---- 管理画面 ----
+  function openAdmin() {
+    showView('admin');
+    adminTab('users');
+    loadAdmin();
+  }
+  function loadAdmin(cb) {
+    call('apiAdminData', [state.token], function (res) {
+      state.users = res.users; state.cats = res.categories;
+      renderUsers(); renderCats();
+      if (cb) cb();
+    });
+  }
+  function adminTab(name) {
+    ['users', 'cats', 'log'].forEach(function (t) {
+      $('tab-' + t).classList.toggle('active', t === name);
+      $('pane-' + t).classList.toggle('hidden', t !== name);
+    });
+    if (name === 'log') loadLog();
+  }
+  function catName(id) {
+    for (var i = 0; i < state.cats.length; i++) if (state.cats[i].id === id) return state.cats[i].name;
+    return id;
+  }
+
+  function renderUsers() {
+    var q = $('userFilter').value.trim().toLowerCase();
+    var rows = state.users.filter(function (u) {
+      return !q || u.id.toLowerCase().indexOf(q) >= 0 || u.name.toLowerCase().indexOf(q) >= 0;
+    });
+    $('userRows').innerHTML = rows.map(function (u) {
+      var isMe = u.id === state.me.id;
+      var stopped = u.status === '停止';
+      var cats = u.role === ROLE_ADMIN ? '<span class="tag admin">すべて</span>'
+        : (u.cats.length ? u.cats.map(function (c) { return '<span class="tag">' + esc(catName(c)) + '</span>'; }).join('') : '<span class="hint">なし</span>');
+      return '<tr>' +
+        '<td>' + esc(u.id) + '</td>' +
+        '<td>' + esc(u.name) + (u.mustChange ? ' <span class="tag">初回PW未変更</span>' : '') + '</td>' +
+        '<td>' + (u.role === ROLE_ADMIN ? '<span class="tag admin">管理者</span>' : '一般') + '</td>' +
+        '<td style="white-space:normal">' + cats + '</td>' +
+        '<td>' + (stopped ? '<span class="tag stopped">停止</span>' : '有効') + '</td>' +
+        '<td>' + esc(u.lastLogin || '—') + '</td>' +
+        '<td class="row">' +
+          '<button class="small" data-act="edit" data-id="' + esc(u.id) + '">編集</button>' +
+          '<button class="small" data-act="reset" data-id="' + esc(u.id) + '">PW再発行</button>' +
+          (isMe ? '' : '<button class="small" data-act="' + (stopped ? 'resume' : 'stop') + '" data-id="' + esc(u.id) + '">' + (stopped ? '再開' : '停止') + '</button>' +
+                       '<button class="small danger" data-act="delete" data-id="' + esc(u.id) + '">削除</button>') +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="hint">該当なし</td></tr>';
+  }
+
+  $('userRows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var u = state.users.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+    if (!u) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'edit') openUserDialog(u);
+    if (act === 'reset') confirmBox('PW再発行', u.name + ' さんのパスワードを再発行します。今のパスワードは使えなくなります。', function () {
+      call('apiResetPassword', [state.token, u.id], function (res) { showTempPw(u, res.tempPassword); loadAdmin(); });
+    });
+    if (act === 'stop') confirmBox('停止', u.name + ' さんを停止します。すぐにログインできなくなります（データは残ります）。', function () {
+      call('apiSetStatus', [state.token, u.id, '停止'], function () { loadAdmin(); });
+    });
+    if (act === 'resume') call('apiSetStatus', [state.token, u.id, '有効'], function () { loadAdmin(); });
+    if (act === 'delete') confirmBox('削除', u.name + '（' + u.id + '）を完全に削除します。元に戻せません。', function () {
+      call('apiDeleteUser', [state.token, u.id], function () { loadAdmin(); });
+    });
+  });
+
+  function openUserDialog(u) {
+    state.editingUser = u;
+    $('userDialogTitle').textContent = u ? 'ユーザー編集' : 'ユーザー追加';
+    $('uId').value = u ? u.id : '';
+    $('uId').disabled = !!u;
+    $('uName').value = u ? u.name : '';
+    var role = u ? u.role : '一般';
+    document.querySelectorAll('input[name=uRole]').forEach(function (r) { r.checked = r.value === role; });
+    $('uCats').innerHTML = state.cats.map(function (c) {
+      var on = u && u.cats.indexOf(c.id) >= 0;
+      return '<label><input type="checkbox" value="' + esc(c.id) + '"' + (on ? ' checked' : '') + '> ' + esc(c.name) + '</label>';
+    }).join('') || '<span class="hint">カテゴリがありません</span>';
+    setMsg('userMsg', '');
+    $('userDialog').classList.add('show');
+  }
+
+  function saveUser() {
+    var u = state.editingUser;
+    var data = {
+      id: $('uId').value.trim(),
+      name: $('uName').value.trim(),
+      role: document.querySelector('input[name=uRole]:checked').value,
+      cats: Array.prototype.map.call(document.querySelectorAll('#uCats input:checked'), function (c) { return c.value; })
+    };
+    call('apiSaveUser', [state.token, data, !u], function (res) {
+      closeDialog('userDialog');
+      if (res.tempPassword) showTempPw(data, res.tempPassword);
+      loadAdmin();
+    }, 'userMsg');
+  }
+
+  function showTempPw(u, pw) {
+    $('pwDialogFor').textContent = u.name + '（ID：' + u.id + '）';
+    $('pwDialogValue').textContent = pw;
+    $('pwDialog').classList.add('show');
+  }
+
+  // ---- カテゴリ ----
+  function renderCats() {
+    $('catRows').innerHTML = state.cats.map(function (c) {
+      var n = state.users.filter(function (u) { return u.cats.indexOf(c.id) >= 0; }).length;
+      return '<tr><td>' + esc(c.id) + '</td><td>' + esc(c.name) + '</td><td style="white-space:normal">' + esc(c.desc) + '</td><td>' + (c.folderId ? '設定済' : '<span class="hint">未設定</span>') + '</td><td>' + n + '</td>' +
+        '<td class="row"><button class="small" data-act="edit" data-id="' + esc(c.id) + '">編集</button>' +
+        '<button class="small danger" data-act="delete" data-id="' + esc(c.id) + '">削除</button></td></tr>';
+    }).join('') || '<tr><td colspan="6" class="hint">カテゴリがありません</td></tr>';
+  }
+
+  $('catRows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var c = state.cats.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+    if (!c) return;
+    if (b.getAttribute('data-act') === 'edit') openCatDialog(c);
+    else confirmBox('カテゴリ削除', '「' + c.name + '」を削除します。このカテゴリが付いている全員から外れます。', function () {
+      call('apiDeleteCategory', [state.token, c.id], function () { loadAdmin(); });
+    });
+  });
+
+  function openCatDialog(c) {
+    state.editingCat = c;
+    $('catDialogTitle').textContent = c ? 'カテゴリ編集' : 'カテゴリ追加';
+    $('cName').value = c ? c.name : '';
+    $('cDesc').value = c ? c.desc : '';
+    $('cFolder').value = c && c.folderId ? 'https://drive.google.com/drive/folders/' + c.folderId : '';
+    setMsg('catMsg', '');
+    $('catDialog').classList.add('show');
+  }
+
+  function saveCat() {
+    var c = state.editingCat;
+    var data = { id: c ? c.id : '', name: $('cName').value.trim(), desc: $('cDesc').value.trim(), folder: $('cFolder').value.trim() };
+    call('apiSaveCategory', [state.token, data, !c], function () {
+      closeDialog('catDialog');
+      loadAdmin(function () {
+        call('apiMe', [state.token], function (res) { setMe(res.me); });
+      });
+    }, 'catMsg');
+  }
+
+  // ---- ファイル（見るだけ） ----
+  var KIND_ICON = { folder: '📁', doc: 'DOC', sheet: 'XLS', slide: 'PPT', pdf: 'PDF', image: 'IMG', file: 'FILE', 'other-google': 'FILE' };
+  var fileState = { catId: null, viewerUrl: null };
+
+  $('myCats').addEventListener('click', function (e) {
+    var el = e.target.closest('.cat.link');
+    if (el) openFolder(el.getAttribute('data-cat'), null);
+  });
+
+  function openFolder(catId, folderId) {
+    fileState.catId = catId;
+    call('apiListFolder', [state.token, catId, folderId], function (res) {
+      showView('files');
+      $('crumbs').innerHTML = '<a data-home="1">ホーム</a>' + res.path.map(function (p, i) {
+        return ' ＞ ' + (i === res.path.length - 1 ? '<b>' + esc(p.name) + '</b>' : '<a data-folder="' + esc(p.id) + '">' + esc(p.name) + '</a>');
+      }).join('');
+      var items = res.folders.map(function (f) {
+        return '<li><span class="ic folder">📁</span><span class="nm folder" data-folder="' + esc(f.id) + '">' + esc(f.name) + '</span><span class="meta">' + esc(f.updated) + '</span></li>';
+      }).concat(res.files.map(function (f) {
+        var canOpen = f.kind !== 'other-google';
+        return '<li><span class="ic ' + esc(f.kind === 'other-google' ? 'file' : f.kind) + '">' + esc(KIND_ICON[f.kind] || 'FILE') + '</span>' +
+          '<span class="nm">' + esc(f.name) + '</span>' +
+          '<span class="meta">' + esc(f.updated) + '</span>' +
+          (canOpen ? '<button class="small" data-file="' + esc(f.id) + '" data-name="' + esc(f.name) + '">開く</button>' : '<span class="meta">開けません</span>') + '</li>';
+      }));
+      $('fileList').innerHTML = items.join('');
+      $('filesEmpty').textContent = items.length ? '' : 'このフォルダは空です。';
+    });
+  }
+
+  $('crumbs').addEventListener('click', function (e) {
+    var a = e.target.closest('a');
+    if (!a) return;
+    if (a.getAttribute('data-home')) showView('home');
+    else openFolder(fileState.catId, a.getAttribute('data-folder'));
+  });
+
+  $('fileList').addEventListener('click', function (e) {
+    var f = e.target.closest('[data-folder]');
+    if (f) { openFolder(fileState.catId, f.getAttribute('data-folder')); return; }
+    var b = e.target.closest('button[data-file]');
+    if (b) openFile(b.getAttribute('data-file'), b.getAttribute('data-name'));
+  });
+
+  function openFile(fileId, label) {
+    call('apiGetFile', [state.token, fileState.catId, fileId], function (res) {
+      var bin = atob(res.base64);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      if (fileState.viewerUrl) URL.revokeObjectURL(fileState.viewerUrl);
+      var url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
+      fileState.viewerUrl = url;
+      $('viewerName').textContent = res.name;
+      $('viewerDownload').href = url;
+      $('viewerDownload').setAttribute('download', res.name);
+      var body = $('viewerBody');
+      if (res.mimeType === 'application/pdf') body.innerHTML = '<iframe src="' + url + '"></iframe>';
+      else if (/^image\//.test(res.mimeType)) body.innerHTML = '<img src="' + url + '" alt="">';
+      else body.innerHTML = '<p style="padding:20px">このファイルは画面に表示できません。「ダウンロード」から開いてください。</p>';
+      $('viewerDialog').classList.add('show');
+    });
+  }
+
+  function closeViewer() {
+    closeDialog('viewerDialog');
+    $('viewerBody').innerHTML = '';
+    if (fileState.viewerUrl) { URL.revokeObjectURL(fileState.viewerUrl); fileState.viewerUrl = null; }
+  }
+
+  // ---- ログ ----
+  function loadLog() {
+    call('apiGetLog', [state.token, 200], function (res) {
+      $('logRows').innerHTML = res.logs.map(function (l) {
+        return '<tr><td>' + esc(l.at) + '</td><td>' + esc(l.by) + '</td><td>' + esc(l.action) + '</td><td>' + esc(l.target) + '</td><td style="white-space:normal">' + esc(l.detail) + '</td></tr>';
+      }).join('') || '<tr><td colspan="5" class="hint">ログはまだありません</td></tr>';
+    });
+  }
+
+  showView('login');
+</script>
+<!-- タスク表の画面（Supabase版ポータル）。shinsei.html のあとに読み込む -->
+<style>
+  /* 申請の画面と共通の部品（タスクだけのシステムでも使う） */
+  .sh-kanji { flex: none; width: 38px; height: 38px; border-radius: 8px; background: var(--primary-light, #e6f0ec); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; }
+  .sh-note { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin: 0 0 12px; }
+  .sh-req { font-size: 11px; color: var(--danger); border: 1px solid var(--danger); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-weight: normal; }
+  .sh-mid { flex: 1; min-width: 0; }
+  .sh-homecard { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .sh-homecard .sh-mid { min-width: 200px; }
+  #view-tasks { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
+  .tk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .tk-head h2 { margin: 0; }
+  .tk-badge { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px; border-radius: 9px; background: #b42318; color: #fff;
+    font-size: 11px; font-weight: bold; line-height: 18px; text-align: center; }
+  #view-tasks .tabs .tk-badge { background: var(--warn-bg); color: #8a5a00; }
+  .tk-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .tk-tools input[type=search] { flex: 1 1 180px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 14px; }
+  .tk-tools label { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; }
+  .tk-list { list-style: none; margin: 0; padding: 0; }
+  .tk-list li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+  .tk-list li:last-child { border-bottom: 0; }
+  .tk-list input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--primary); }
+  .tk-list .tk-nocheck { width: 20px; flex: none; }
+  .tk-open { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .tk-open b { display: block; overflow-wrap: anywhere; }
+  .tk-open:hover b { color: var(--primary); }
+  .tk-done b { text-decoration: line-through; color: var(--muted); }
+  .tk-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 3px; font-size: 12px; color: var(--muted); }
+  .tk-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: #eef2f7; color: var(--text); white-space: nowrap; }
+  .tk-chip.late { background: #fdecea; color: #b42318; font-weight: bold; }
+  .tk-chip.today { background: var(--warn-bg); color: #8a5a00; font-weight: bold; }
+  .tk-chip.mark { background: #b42318; color: #fff; font-weight: bold; }
+  .tk-chip.prog { background: var(--primary-light, #e6f0ec); color: var(--primary); }
+  .tk-empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+  #tkDialog .dialog { max-width: 600px; }
+  #tkDialog label { color: var(--text); font-weight: bold; }
+  #tkDialog input[type=text], #tkDialog input[type=date], #tkDialog select, #tkDialog textarea {
+    width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 16px; background: var(--card); color: var(--text); }
+  #tkDialog textarea { min-height: 80px; resize: vertical; }
+  .tk-radios { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .tk-radios label, .tk-cats label { display: inline-flex; align-items: center; gap: 6px; font-weight: normal !important; margin: 0; }
+  .tk-cats { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 0 24px; }
+  .tk-rows { display: grid; grid-template-columns: 6.5em 1fr; margin: 8px 0 0; }
+  .tk-rows dt, .tk-rows dd { margin: 0; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .tk-rows dt { color: var(--muted); font-size: 13px; }
+  .tk-rows dd { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+  .tk-status { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .tk-status button { flex: 1 1 auto; }
+  .tk-status button.on { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+  .tk-notes { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .tk-notes li { background: var(--bg); border-radius: 8px; padding: 8px 10px; max-width: 88%; }
+  .tk-notes li.mine { align-self: flex-end; background: var(--primary-light, #e6f0ec); }
+  .tk-notes .tk-nb { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tk-notes .tk-nh { font-size: 12px; color: var(--muted); }
+  .tk-sec { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .tk-sec h3 { font-size: 14px; margin: 0; }
+  #uTaskBox { border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 6px; }
+  #uTaskBox .checks label { margin: 4px 0; }
+  @media (max-width: 600px) { .tk-rows { grid-template-columns: 1fr; } .tk-rows dt { border-bottom: 0; padding-bottom: 0; } }
+</style>
+
+<section id="view-tasks" class="hidden">
+  <div class="card">
+    <div class="tk-head">
+      <h2>タスク</h2>
+      <span class="spacer"></span>
+      <button class="small" id="tkReload">最新にする</button>
+      <button class="primary" id="tkNew">＋ 新しいタスク</button>
+    </div>
+    <div class="tabs" id="tkTabs"></div>
+    <div class="tk-tools">
+      <input type="search" id="tkQ" placeholder="件名・担当者で絞り込み" aria-label="絞り込み">
+      <label><input type="checkbox" id="tkShowDone"> 完了も表示</label>
+    </div>
+    <ul class="tk-list" id="tkList"></ul>
+    <p class="hint" id="tkNote"></p>
+  </div>
+</section>
+
+<div class="overlay" id="tkDialog">
+  <div class="dialog" id="tkDialogBody"></div>
+</div>
+
+<script>
+(function () {
+  var VIS = { self: '自分だけ', cats: 'カテゴリの人' };
+  var T = null;
+  function fresh() { return { loaded: false, me: null, tasks: [], cats: [], users: [], tab: 'mine', open: null, edit: null, notes: [], showNotes: false }; }
+  T = fresh();
+
+  // ---- 画面切替（ポータルの showView に「タスク」を足す） ----
+  var prevShow = window.showView;
+  window.showView = function (name) {
+    var sec = $('view-tasks');
+    if (name === 'tasks' && state.me && !state.me.mustChange) {
+      prevShow('tasks');
+      sec.classList.remove('hidden');
+      load();
+      return;
+    }
+    sec.classList.add('hidden');
+    prevShow(name);
+    if (name === 'home' && state.me && !state.me.mustChange) { renderHomeCard(); refreshCount(); }
+  };
+  var prevReset = window.resetToLogin;
+  window.resetToLogin = function (message) {
+    T = fresh();
+    ['tkList', 'tkTabs', 'tkDialogBody', 'tkNote'].forEach(function (id) { $(id).innerHTML = ''; });
+    $('tkQ').value = ''; $('tkShowDone').checked = false;
+    var hc = $('tkHomeCard'); if (hc) hc.remove();
+    setBadge(0);
+    prevReset(message);
+  };
+
+  // ヘッダーの「タスク」ボタン（件数つき）
+  var headBtn = document.createElement('button');
+  headBtn.className = 'small';
+  headBtn.id = 'tkHeadBtn';
+  headBtn.innerHTML = 'タスク<span class="tk-badge hidden" id="tkHeadBadge"></span>';
+  headBtn.addEventListener('click', function () { showView('tasks'); });
+  (function () { var home = document.querySelector('#appHeader .row button'); home.parentNode.insertBefore(headBtn, home.nextSibling); })();
+
+  function setBadge(n) {
+    var b = $('tkHeadBadge'); if (!b) return;
+    b.textContent = n; b.classList.toggle('hidden', !n);
+    var hb = $('tkHomeBadge'); if (hb) hb.innerHTML = n ? '<span class="tk-chip mark">新着 ' + n + '件</span>' : '';
+  }
+  function refreshCount() {
+    if (!state.token) return;
+    google.script.run.withSuccessHandler(function (res) { if (res && res.ok) setBadge(res.marks); }).apiTaskCount(state.token);
+  }
+  function renderHomeCard() {
+    var card = $('tkHomeCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'card'; card.id = 'tkHomeCard';
+      var home = $('view-home'), sh = $('shHomeCard');
+      home.insertBefore(card, sh ? sh.nextSibling : home.firstChild);
+    }
+    card.innerHTML = '<div class="sh-homecard"><div class="sh-kanji">務</div><div class="sh-mid"><b>タスク</b><br><span class="hint">自分のタスクと、頼まれた仕事・頼んだ仕事の確認</span></div>' +
+      '<span id="tkHomeBadge"></span><button class="primary" id="tkHomeOpen">タスクを開く</button></div>';
+    $('tkHomeOpen').addEventListener('click', function () { showView('tasks'); });
+  }
+
+  // ---- 読み込み ----
+  function load(cb) {
+    call('apiTaskList', [state.token], function (res) {
+      T.me = res.me; T.tasks = res.tasks; T.cats = res.categories; T.users = res.users; T.loaded = true;
+      setBadge(res.tasks.filter(function (t) { return t.mark; }).length);
+      render();
+      if (cb) cb();
+    });
+  }
+  $('tkReload').addEventListener('click', function () { load(); });
+
+  // ---- 一覧 ----
+  function isMine(t) { return t.assignee.toLowerCase() === T.me.id.toLowerCase(); }
+  function isAsked(t) { return t.creator.toLowerCase() === T.me.id.toLowerCase() && !isMine(t); }
+  function tabDefs() {
+    var tabs = [['mine', '自分のタスク'], ['asked', '依頼したタスク'], ['others', T.me && T.me.seeAll ? '全職員のタスク' : '見られるタスク']];
+    return tabs.filter(function (t) {
+      if (t[0] === 'asked') return T.me.canAssign || T.tasks.some(isAsked);
+      if (t[0] === 'others') return T.tasks.some(function (x) { return !isMine(x) && !isAsked(x); });
+      return true;
+    });
+  }
+  function inTab(t, tab) { return tab === 'mine' ? isMine(t) : tab === 'asked' ? isAsked(t) : (!isMine(t) && !isAsked(t)); }
+  function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function fmtDue(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); if (!m) return ''; var d = new Date(+m[1], m[2] - 1, +m[3]); return (+m[2]) + '/' + (+m[3]) + '（' + '日月火水木金土'.charAt(d.getDay()) + '）'; }
+  function dueChip(t) {
+    if (!t.due) return '';
+    var td = today(), cls = '', pre = '期限 ';
+    if (t.status !== '完了') { if (t.due < td) { cls = ' late'; pre = '期限切れ '; } else if (t.due === td) { cls = ' today'; pre = '今日まで '; } }
+    return '<span class="tk-chip' + cls + '">' + pre + esc(fmtDue(t.due)) + '</span>';
+  }
+  function visText(t) {
+    if (t.vis === 'cats') return esc(t.visCatNames) + 'の人';
+    if (t.vis === 'people') return esc(t.visUserNames) + 'さん';
+    if (t.assignee.toLowerCase() !== t.creator.toLowerCase()) return '担当者と頼んだ人だけ';
+    return '自分だけ';
+  }
+  function render() {
+    if (!T.loaded) return;
+    var defs = tabDefs();
+    if (!defs.some(function (d) { return d[0] === T.tab; })) T.tab = 'mine';
+    $('tkTabs').innerHTML = defs.map(function (d) {
+      var n = T.tasks.filter(function (t) { return inTab(t, d[0]) && t.mark; }).length;
+      return '<button data-tab="' + d[0] + '" class="' + (T.tab === d[0] ? 'active' : '') + '">' + d[1] + (n ? '<span class="tk-badge">' + n + '</span>' : '') + '</button>';
+    }).join('');
+    var q = $('tkQ').value.trim().toLowerCase(), showDone = $('tkShowDone').checked;
+    var list = T.tasks.filter(function (t) {
+      return inTab(t, T.tab) && (showDone || t.status !== '完了') &&
+        (!q || [t.title, t.assigneeName, t.creatorName].join(' ').toLowerCase().indexOf(q) >= 0);
+    });
+    var hiddenDone = T.tasks.filter(function (t) { return inTab(t, T.tab) && t.status === '完了'; }).length;
+    $('tkList').innerHTML = list.length ? list.map(function (t) {
+      var who = T.tab === 'mine' ? (isAsked(t) || t.creator.toLowerCase() === T.me.id.toLowerCase() ? '' : '依頼：' + esc(t.creatorName))
+        : '担当：' + esc(t.assigneeName);
+      return '<li class="' + (t.status === '完了' ? 'tk-done' : '') + '">' +
+        (t.canDone ? '<input type="checkbox" data-done="' + t.id + '"' + (t.status === '完了' ? ' checked' : '') + ' aria-label="完了にする">' : '<span class="tk-nocheck"></span>') +
+        '<button class="tk-open" data-open="' + t.id + '"><b>' + esc(t.title) + '</b><span class="tk-meta">' +
+        (t.mark ? '<span class="tk-chip mark">' + esc(t.mark) + '</span>' : '') +
+        (t.status === '進行中' ? '<span class="tk-chip prog">進行中</span>' : '') + dueChip(t) +
+        (who ? '<span>' + who + '</span>' : '') + '<span>公開：' + visText(t) + '</span>' +
+        (t.notes ? '<span>連絡 ' + t.notes + '件</span>' : '') + '</span></button></li>';
+    }).join('') : '<li class="tk-empty">' + (T.tab === 'mine' ? 'いまのタスクはありません。「＋ 新しいタスク」から登録できます。' : T.tab === 'asked' ? '依頼中のタスクはありません。' : '見られるタスクはありません。') + '</li>';
+    $('tkNote').textContent = !showDone && hiddenDone ? '完了したタスクが ' + hiddenDone + ' 件あります（「完了も表示」で出ます）。' : '';
+  }
+  $('tkTabs').addEventListener('click', function (e) { var b = e.target.closest('[data-tab]'); if (b) { T.tab = b.getAttribute('data-tab'); render(); } });
+  $('tkQ').addEventListener('input', render);
+  $('tkShowDone').addEventListener('change', render);
+  $('tkList').addEventListener('change', function (e) {
+    var c = e.target.closest('[data-done]'); if (!c) return;
+    var id = c.getAttribute('data-done');
+    call('apiTaskStatus', [state.token, id, c.checked ? '完了' : '未着手'], function () { load(); });
+  });
+  $('tkList').addEventListener('click', function (e) { var b = e.target.closest('[data-open]'); if (b) openTask(b.getAttribute('data-open')); });
+
+  // ---- 詳細 ----
+  function findTask(id) { for (var i = 0; i < T.tasks.length; i++) if (String(T.tasks[i].id) === String(id)) return T.tasks[i]; return null; }
+  function openTask(id) {
+    call('apiTaskGet', [state.token, id], function (res) {
+      T.open = res.task; T.notes = res.notes; T.showNotes = res.showNotes; T.edit = null;
+      renderDialog(); $('tkDialog').classList.add('show'); $('tkDialog').scrollTop = 0;
+      load();   // 目印を消した状態に更新
+    });
+  }
+  function closeTk() { T.open = null; T.edit = null; closeDialog('tkDialog'); }
+  function renderDialog() {
+    if (T.edit) { renderForm(); return; }
+    var t = T.open;
+    var head = '<div class="row"><b style="font-size:17px;overflow-wrap:anywhere;flex:1;min-width:0">' + esc(t.title) + '</b><button class="small" data-act="close">閉じる</button></div>';
+    var rows = '<dl class="tk-rows"><dt>状況</dt><dd>' + esc(t.status) + (t.doneAt ? '（' + esc(t.doneAt) + ' 完了）' : '') + '</dd>' +
+      '<dt>期限</dt><dd>' + (t.due ? esc(fmtDue(t.due)) : '—') + '</dd>' +
+      '<dt>担当</dt><dd>' + esc(t.assigneeName) + '</dd>' +
+      '<dt>頼んだ人</dt><dd>' + esc(t.creatorName) + '</dd>' +
+      '<dt>公開先</dt><dd>' + visText(t) + '</dd>' +
+      (t.detail ? '<dt>くわしく</dt><dd>' + esc(t.detail) + '</dd>' : '') +
+      '<dt>登録</dt><dd>' + esc(t.createdAt) + '</dd></dl>';
+    var status = '';
+    if (t.canEdit) {
+      status = '<div class="tk-status">' + ['未着手', '進行中', '完了'].map(function (s) {
+        return '<button data-st="' + s + '" class="' + (t.status === s ? 'on' : '') + '">' + s + '</button>'; }).join('') + '</div>';
+    } else if (t.canDone) {
+      status = '<div class="tk-status">' + (t.status === '完了'
+        ? '<button data-st="未着手">完了を取り消す</button>'
+        : '<button class="primary" data-st="完了">完了にする</button>') + '</div>';
+    }
+    var notes = '';
+    // 自分用のタスク（担当＝頼んだ人）は連絡する相手がいないので、連絡の欄を出さない
+    var selfTask = t.assignee.toLowerCase() === t.creator.toLowerCase();
+    if (T.showNotes && !(selfTask && !T.notes.length)) {
+      notes = '<div class="tk-sec"><h3>連絡</h3>' +
+        (T.notes.length ? '<ul class="tk-notes">' + T.notes.map(function (n) {
+          return '<li class="' + (n.mine ? 'mine' : '') + '"><div class="tk-nh">' + esc(n.byName) + '・' + esc(n.at) + '</div><div class="tk-nb">' + esc(n.body) + '</div></li>'; }).join('') + '</ul>'
+          : '<p class="hint" style="margin:6px 0 0">まだ連絡はありません。</p>') +
+        (t.canNote && t.assignee.toLowerCase() !== t.creator.toLowerCase() ? '<label for="tkNoteText" style="margin-top:10px">' +
+          (isMine(t) ? esc(t.creatorName) + 'さん（指示した人）へ連絡' : esc(t.assigneeName) + 'さん（担当者）へ連絡') +
+          '</label><textarea id="tkNoteText" maxlength="500" placeholder="例：発注しました。届くのは来週です"></textarea>' +
+          '<div class="row" style="margin-top:6px"><span class="spacer"></span><button class="primary" data-act="note">送る</button></div>' : '') +
+        '</div>';
+    }
+    var foot = t.canEdit ? '<div class="row tk-sec"><button class="small danger" data-act="del">削除</button><span class="spacer"></span><button data-act="edit">内容を直す</button></div>'
+      : '<p class="hint tk-sec">' + (t.canDone ? '内容を変えられるのは、指示した人（' + esc(t.creatorName) + 'さん）だけです。' : 'このタスクは見るだけです。') + '</p>';
+    $('tkDialogBody').innerHTML = head + rows + status + notes + foot + '<div class="msg" id="tkMsg"></div>';
+  }
+
+  // ---- 登録・編集フォーム ----
+  function openNew() {
+    var vis = T.me.defaultVis === 'cats' ? 'cats' : 'self', cats = (T.me.defaultCats || []).slice();
+    T.open = null;
+    T.edit = { id: '', title: '', detail: '', due: '', status: '未着手', assignee: T.me.id, vis: vis, visCats: cats, visUsers: [] };
+    renderForm(); $('tkDialog').classList.add('show'); $('tkDialog').scrollTop = 0;
+    setTimeout(function () { var f = $('tkTitle'); if (f) f.focus(); }, 50);
+  }
+  $('tkNew').addEventListener('click', function () { if (T.loaded) openNew(); else load(openNew); });
+  function catOptions(sel) {
+    return T.cats.length ? T.cats.map(function (c) {
+      return '<label><input type="checkbox" data-vc="' + esc(c.id) + '"' + (sel.indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + '</label>'; }).join('')
+      : '<span class="hint">選べるカテゴリがありません（管理者がカテゴリを付けると選べます）</span>';
+  }
+  function renderForm() {
+    var e = T.edit, isNew = !e.id;
+    var canAssign = T.me.canAssign && (isNew || (T.open && T.open.canReassign));
+    var assignees = T.users.filter(function (u) { return u.assignable || u.id.toLowerCase() === String(e.assignee).toLowerCase(); });
+    var others = T.users.filter(function (u) { return u.id.toLowerCase() !== T.me.id.toLowerCase(); });
+    var people = others.length ? others.map(function (u) {
+      return '<label><input type="checkbox" data-vu="' + esc(u.id) + '"' + ((e.visUsers || []).map(function (x) { return x.toLowerCase(); }).indexOf(u.id.toLowerCase()) >= 0 ? ' checked' : '') + '> ' + esc(u.name) + '</label>'; }).join('')
+      : '<span class="hint">選べる人がいません</span>';
+    var assign = canAssign
+      ? '<label for="tkAssignee">担当（だれに）</label><select id="tkAssignee">' + assignees.map(function (u) {
+          return '<option value="' + esc(u.id) + '"' + (u.id.toLowerCase() === String(e.assignee).toLowerCase() ? ' selected' : '') + '>' + esc(u.name) +
+            (u.id.toLowerCase() === T.me.id.toLowerCase() ? '（自分）' : '') + '</option>'; }).join('') + '</select>' +
+        '<p class="hint" style="margin:4px 0 0">ほかの人を選ぶと、その人への依頼になります。' + (T.me.isAdmin ? '' : '選べるのは、同じカテゴリの人だけです。') + '</p>'
+      : '';
+    $('tkDialogBody').innerHTML = '<div class="row"><b style="font-size:17px">' + (isNew ? '新しいタスク' : 'タスクを直す') + '</b><span class="spacer"></span><button class="small" data-act="cancel">やめる</button></div>' +
+      '<p class="sh-note" style="margin-top:10px">患者様・利用者様のお名前は書かないでください（必要なときはIDで記入）。</p>' +
+      '<label for="tkTitle">やること<span class="sh-req">必須</span></label><input type="text" id="tkTitle" maxlength="100" value="' + esc(e.title) + '" placeholder="例：備品（トナー）の発注">' +
+      '<label for="tkDetail">くわしく（任意）</label><textarea id="tkDetail" maxlength="2000">' + esc(e.detail) + '</textarea>' +
+      '<div class="sh-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label for="tkDue">期限（任意）</label><input type="date" id="tkDue" value="' + esc(e.due) + '"></div>' +
+      (isNew ? '<div></div>' : '<div><label for="tkStatus">状況</label><select id="tkStatus">' + ['未着手', '進行中', '完了'].map(function (s) {
+        return '<option' + (s === e.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>') + '</div>' +
+      assign +
+      '<label>見せる人</label><div class="tk-radios">' +
+        '<label><input type="radio" name="tkVis" value="self"' + (e.vis !== 'cats' && e.vis !== 'people' ? ' checked' : '') + '> 担当者と頼んだ人だけ</label>' +
+        '<label><input type="radio" name="tkVis" value="cats"' + (e.vis === 'cats' ? ' checked' : '') + '> カテゴリの人にも見せる</label>' +
+        '<div class="tk-cats' + (e.vis === 'cats' ? '' : ' hidden') + '" id="tkVisCats">' + catOptions(e.visCats) + '</div>' +
+        '<label><input type="radio" name="tkVis" value="people"' + (e.vis === 'people' ? ' checked' : '') + '> 名前を選んで見せる</label>' +
+        '<div class="tk-cats' + (e.vis === 'people' ? '' : ' hidden') + '" id="tkVisUsers">' + people + '</div></div>' +
+      '<p class="hint" style="margin:6px 0 0">' + (T.me.seeAll ? '' : '理事長は、どのタスクも見られます。') + '内容を変えられるのは頼んだ人だけです。担当者ができるのは「完了」と連絡だけです。</p>' +
+      '<div class="msg" id="tkMsg"></div>' +
+      '<div class="row" style="margin-top:16px"><span class="spacer"></span><button class="primary" data-act="save">' + (isNew ? '登録する' : '保存する') + '</button></div>';
+  }
+  function readForm() {
+    var e = T.edit;
+    e.title = $('tkTitle').value; e.detail = $('tkDetail').value; e.due = $('tkDue').value;
+    if ($('tkStatus')) e.status = $('tkStatus').value;
+    if ($('tkAssignee')) e.assignee = $('tkAssignee').value;
+    var v = document.querySelector('input[name=tkVis]:checked'); e.vis = v ? v.value : 'self';
+    e.visCats = Array.prototype.map.call(document.querySelectorAll('#tkVisCats input:checked'), function (c) { return c.getAttribute('data-vc'); });
+    e.visUsers = Array.prototype.map.call(document.querySelectorAll('#tkVisUsers input:checked'), function (c) { return c.getAttribute('data-vu'); });
+    return e;
+  }
+  $('tkDialog').addEventListener('change', function (e) {
+    if (!T.edit) return;
+    if (e.target.name === 'tkVis') {
+      $('tkVisCats').classList.toggle('hidden', e.target.value !== 'cats');
+      $('tkVisUsers').classList.toggle('hidden', e.target.value !== 'people');
+      return;
+    }
+    if (e.target.id === 'tkAssignee' && !T.edit.id) {
+      // 担当を選んだら、その人の「いつもの公開先」に合わせる
+      readForm();
+      var u = T.users.filter(function (x) { return x.id === e.target.value; })[0];
+      if (u) {
+        var allowed = T.cats.map(function (c) { return c.id; });
+        T.edit.vis = u.defaultVis === 'cats' ? 'cats' : 'self';
+        T.edit.visCats = (u.defaultCats || []).filter(function (c) { return allowed.indexOf(c) >= 0; });
+        if (T.edit.vis === 'cats' && !T.edit.visCats.length) T.edit.vis = 'self';
+      }
+      renderForm();
+    }
+  });
+  $('tkDialog').addEventListener('click', function (ev) {
+    if (ev.target.id === 'tkDialog') { closeTk(); return; }
+    var st = ev.target.closest('[data-st]');
+    if (st && T.open) {
+      call('apiTaskStatus', [state.token, T.open.id, st.getAttribute('data-st')], function () { reopen(); }, 'tkMsg');
+      return;
+    }
+    var b = ev.target.closest('[data-act]'); if (!b) return;
+    var a = b.getAttribute('data-act');
+    if (a === 'close') closeTk();
+    if (a === 'cancel') { if (T.open) { T.edit = null; renderDialog(); } else closeTk(); }
+    if (a === 'edit') {
+      var t = T.open;
+      T.edit = { id: t.id, title: t.title, detail: t.detail, due: t.due, status: t.status, assignee: t.assignee, vis: t.vis, visCats: t.visCats.slice(), visUsers: (t.visUsers || []).slice() };
+      renderForm();
+    }
+    if (a === 'save') {
+      var e = readForm();
+      if (!e.title.trim()) { setMsg('tkMsg', 'やることを入れてください'); $('tkTitle').focus(); return; }
+      if (e.vis === 'cats' && !e.visCats.length) { setMsg('tkMsg', '見せるカテゴリを1つ以上選んでください'); return; }
+      if (e.vis === 'people' && !e.visUsers.length) { setMsg('tkMsg', '見せる人を1人以上選んでください'); return; }
+      b.disabled = true;
+      call('apiTaskSave', [state.token, e], function (res) {
+        if (T.open) { reopen(); } else { closeTk(); load(); }
+      }, 'tkMsg');
+      setTimeout(function () { b.disabled = false; }, 1500);
+    }
+    if (a === 'note') {
+      var txt = $('tkNoteText').value.trim();
+      if (!txt) { setMsg('tkMsg', '連絡の内容を入れてください'); return; }
+      call('apiTaskNote', [state.token, T.open.id, txt], function () { reopen(); }, 'tkMsg');
+    }
+    if (a === 'del') {
+      var tt = T.open;
+      confirmBox('タスクを削除', '「' + tt.title + '」を削除します。連絡も消え、元に戻せません。', function () {
+        call('apiTaskDelete', [state.token, tt.id], function () { closeTk(); load(); });
+      });
+    }
+  });
+  function reopen() { if (T.open) openTask(T.open.id); }
+
+  // ---- 管理画面のユーザー編集に「タスク表の設定」を足す（管理者用） ----
+  (function () {
+    var msg = $('userMsg');
+    var box = document.createElement('div');
+    box.id = 'uTaskBox';
+    box.innerHTML = '<label>タスク表</label><div class="checks"><label><input type="checkbox" id="uSeeAll"> 全員のタスクを見られる（理事長など）</label>' +
+      '<label><input type="checkbox" id="uCanAssign"> タスクを依頼できる（同じカテゴリの人に。上長など）</label></div>' +
+      '<label for="uTaskVis">この人のタスクの、いつもの公開先</label><select id="uTaskVis" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit">' +
+      '<option value="self">担当者と頼んだ人だけ</option><option value="cats">カテゴリの人にも見せる</option></select>' +
+      '<div class="checks hidden" id="uTaskCats"></div><p class="hint" style="margin:4px 0 0">新しいタスクを登録するときの初期値です（例：事務長のタスクは事務部門の人に見せる）。タスクごとに変えられます。</p>';
+    msg.parentNode.insertBefore(box, msg);
+    $('uTaskVis').addEventListener('change', function () { $('uTaskCats').classList.toggle('hidden', this.value !== 'cats'); });
+  })();
+  var prevOpenUser = window.openUserDialog;
+  window.openUserDialog = function (u) {
+    prevOpenUser(u);
+    $('uSeeAll').checked = !!(u && u.seeAllTasks);
+    $('uCanAssign').checked = !!(u && u.canAssignTasks);
+    $('uTaskVis').value = (u && u.taskVis === 'cats') ? 'cats' : 'self';
+    var sel = (u && u.taskVisCats) || [];
+    $('uTaskCats').innerHTML = state.cats.map(function (c) {
+      return '<label><input type="checkbox" value="' + esc(c.id) + '"' + (sel.indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + '</label>'; }).join('') || '<span class="hint">カテゴリがありません</span>';
+    $('uTaskCats').classList.toggle('hidden', $('uTaskVis').value !== 'cats');
+  };
+  window.saveUser = function () {
+    var u = state.editingUser;
+    var data = {
+      id: $('uId').value.trim(),
+      name: $('uName').value.trim(),
+      role: document.querySelector('input[name=uRole]:checked').value,
+      cats: Array.prototype.map.call(document.querySelectorAll('#uCats input:checked'), function (c) { return c.value; }),
+      seeAllTasks: $('uSeeAll').checked,
+      canAssignTasks: $('uCanAssign').checked,
+      taskVis: $('uTaskVis').value,
+      taskVisCats: Array.prototype.map.call(document.querySelectorAll('#uTaskCats input:checked'), function (c) { return c.value; })
+    };
+    call('apiSaveUser', [state.token, data, !u], function (res) {
+      closeDialog('userDialog');
+      if (res.tempPassword) showTempPw(data, res.tempPassword);
+      loadAdmin();
+    }, 'userMsg');
+  };
+  // ユーザー一覧に「全タスク閲覧」の目印
+  var prevRenderUsers = window.renderUsers;
+  window.renderUsers = function () {
+    prevRenderUsers();
+    var rows = document.querySelectorAll('#userRows tr');
+    var list = state.users.filter(function (u) { var q = $('userFilter').value.trim().toLowerCase(); return !q || u.id.toLowerCase().indexOf(q) >= 0 || u.name.toLowerCase().indexOf(q) >= 0; });
+    list.forEach(function (u, i) {
+      if (!rows[i] || !rows[i].children[1]) return;
+      if (u.seeAllTasks) rows[i].children[1].insertAdjacentHTML('beforeend', ' <span class="tag admin">全タスク閲覧</span>');
+      if (u.canAssignTasks && u.role !== ROLE_ADMIN) rows[i].children[1].insertAdjacentHTML('beforeend', ' <span class="tag">依頼できる</span>');
+    });
+  };
+})();
+</script>
+
+<!-- Supabase 版だけの調整：Googleドライブの資料表示は使わないので隠す。カテゴリは申請の振り分けに使う -->
+<style>
+  #view-home > .card:not(#shHomeCard):not(#tkHomeCard) { display: none; }
+  #catDialog label[for=cFolder], #cFolder, #catDialog .hint { display: none; }
+  #pane-cats th:nth-child(4), #pane-cats td:nth-child(4) { display: none; }
+  #logRows td:last-child { min-width: 14em; }
+</style>
+<script>
+  (function () {
+    var hint = document.querySelector('#pane-cats .hint');
+    if (hint) hint.textContent = 'カテゴリは、申請を出せる人の振り分けに使います（例：医師休暇申請は「医師」カテゴリの人だけ）。削除すると、全ユーザーからそのカテゴリが外れます。';
+    if (/xxxxxxxx|ここに/.test(SUPABASE_URL + SUPABASE_ANON_KEY)) {
+      setMsg('loginMsg', 'まだ Supabase につながっていません。index.html の最初にある SUPABASE_URL と SUPABASE_ANON_KEY を設定してください。');
+    }
+  })();
+</script>
+
+<!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が tasks と 真成会 タスク を入れる） -->
+<script>
+  (function () {
+    var APP = 'tasks', TITLE = '真成会 タスク', NAME = 'タスク';
+    document.title = TITLE;
+    $('appTitle').textContent = TITLE;
+    // ログインの見出しは「真成会」と「〇〇ログイン」の2行
+    var lt = $('loginTitle');
+    lt.textContent = '';
+    lt.appendChild(document.createTextNode('真成会'));
+    lt.appendChild(document.createElement('br'));
+    lt.appendChild(document.createTextNode(NAME + 'ログイン'));
+    // 「ホーム」はこのシステムの画面そのものにする
+    var prev = window.showView;
+    window.showView = function (name) {
+      if (name === 'home' && state.me && !state.me.mustChange) name = APP;
+      prev(name);
+    };
+    var homeBtn = document.querySelector('#appHeader .row button');
+    if (homeBtn && homeBtn.textContent.trim() === 'ホーム') homeBtn.classList.add('hidden');
+  })();
+</script>
+
+</body>
+</html>
