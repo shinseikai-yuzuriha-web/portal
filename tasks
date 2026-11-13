@@ -1619,17 +1619,21 @@
 </script>
 
 <!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が tasks と 真成会 タスク を入れる） -->
+<style>
+  #loginTitle .lt-org { display: block; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .2em; margin-bottom: 10px; }
+  #loginTitle .lt-app { display: block; font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
+</style>
 <script>
   (function () {
     var APP = 'tasks', TITLE = '真成会 タスク', NAME = 'タスク';
     document.title = TITLE;
     $('appTitle').textContent = TITLE;
-    // ログインの見出しは「真成会」と「〇〇ログイン」の2行
+    // ログインの見出し：「真成会」を小さく上に、「〇〇ログイン」を大きく（2026-11-13 A案）
     var lt = $('loginTitle');
     lt.textContent = '';
-    lt.appendChild(document.createTextNode('真成会'));
-    lt.appendChild(document.createElement('br'));
-    lt.appendChild(document.createTextNode(NAME + 'ログイン'));
+    var org = document.createElement('span'); org.className = 'lt-org'; org.textContent = '真成会';
+    var app = document.createElement('span'); app.className = 'lt-app'; app.textContent = NAME + 'ログイン';
+    lt.appendChild(org); lt.appendChild(app);
     // 「ホーム」はこのシステムの画面そのものにする
     var prev = window.showView;
     window.showView = function (name) {
