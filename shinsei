@@ -1,0 +1,2025 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>真成会ポータル</title>
+<script>
+  // ===== ここに Supabase の2つを貼る（Project Settings → API） ===================
+  var SUPABASE_URL = "https://lzkeaetpykhdrwwwspjy.supabase.co";          // Project URL
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6a2VhZXRweWtoZHJ3d3dzcGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNDM3MTgsImV4cCI6MjEwOTgxOTcxOH0.w_iThhR7s9ZF2R_Co3OIedwdQcsFGSb7WqX4TTTE0uM";      // anon public（または Publishable）キー
+  // ※ service_role（Secret）キーは絶対に貼らないこと
+  // ============================================================================
+
+  // GAS の google.script.run と同じ書き方で、Supabase の api_ 関数を呼ぶ
+  (function () {
+    function snake(n) { return n.replace(/[A-Z]/g, function (c) { return '_' + c.toLowerCase(); }); }
+    function baseUrl() {
+      // 余分な空白や、うっかり付けた /rest/v1 などを取り除く
+      return String(SUPABASE_URL).trim().replace(/\/+$/, '').replace(/\/(rest|auth)\/v1.*$/, '');
+    }
+    /** つながらなかった理由を、画面に出せる言葉にする */
+    function explain(status, body, fnName) {
+      var b = body || {};
+      var code = b.code || '', msg = String(b.message || b.msg || b.error || '');
+      var head = '接続エラー（' + (status ? 'HTTP ' + status : 'ネットワーク') + (code ? '・' + code : '') + '）：';
+      if (!status) return head + 'Supabase に届きませんでした。SUPABASE_URL が「https://〇〇〇.supabase.co」の形か、インターネットにつながっているか確認してください。';
+      if (status === 401 || /api ?key|jwt|secret/i.test(msg)) {
+        if (/secret/i.test(msg)) return head + 'Secret キーが貼られています。anon public（または Publishable）キーに替えてください。';
+        return head + 'キーが受け付けられませんでした。SUPABASE_ANON_KEY に anon public（または Publishable）キーを、前後の空白なしで貼り直してください。';
+      }
+      if (code === 'PGRST202' || (status === 404 && /function|schema cache/i.test(msg))) {
+        return head + '関数「' + fnName + '」が見つかりません。SQL Editor（上の選択欄がデータベースになっていること）で portal.sql をもう一度「Run」してください。';
+      }
+      if (status === 404) return head + 'つなぎ先が見つかりません。SUPABASE_URL の打ち間違い、または Project Settings → Data API が「有効」になっているか確認してください。';
+      if (code === '42501' || status === 403) return head + '関数を呼ぶ許可がありません。portal.sql をもう一度「Run」してください。';
+      return head + (msg || '原因がわかりませんでした') ;
+    }
+    function runner(ok, ng) {
+      return new Proxy({}, {
+        get: function (_, k) {
+          if (k === 'withSuccessHandler') return function (f) { return runner(f, ng); };
+          if (k === 'withFailureHandler') return function (f) { return runner(ok, f); };
+          return function () {
+            var args = Array.prototype.slice.call(arguments);
+            var fnName = snake(String(k));
+            var key = String(SUPABASE_ANON_KEY).trim();
+            var headers = { 'apikey': key, 'Content-Type': 'application/json' };
+            if (/^eyJ/.test(key)) headers.Authorization = 'Bearer ' + key;
+            var fail = function (status, body) {
+              var m = explain(status, body, fnName);
+              console.error(m, body);
+              // 画面に理由を出す（ログイン画面などのメッセージ欄に表示される）
+              if (ok) ok({ ok: false, message: m }); else if (ng) ng(new Error(m));
+            };
+            fetch(baseUrl() + '/rest/v1/rpc/' + fnName, {
+              method: 'POST', headers: headers, body: JSON.stringify({ a: args })
+            }).then(function (r) {
+              return r.text().then(function (t) {
+                var j = null; try { j = JSON.parse(t); } catch (e) { j = { message: t }; }
+                if (!r.ok) { fail(r.status, j); return; }
+                if (ok) ok(j);
+              });
+            }, function () { fail(0, null); });
+          };
+        }
+      });
+    }
+    window.google = { script: { run: runner(null, null) } };
+  })();
+</script>
+
+<base target="_top">
+<meta charset="utf-8">
+<!-- ポータル全体のデザイン（米須さん作成・2026-11-13）。新しい版を作るときはこれを使う -->
+<style>
+  :root {
+    /* 最先端SaaSのトーン（Stripe / Vercelライクなネイビー＆パープルインディゴ） */
+    --bg: #f8fafc; 
+    --card: #ffffff; 
+    --text: #0f172a; 
+    --muted: #64748b;
+    --line: #e2e8f0; 
+    --primary: #6366f1; 
+    --primary-text: #ffffff;
+    --danger: #ef4444; 
+    --warn-bg: #fffbeb; 
+    --warn-line: #fde68a; 
+    --ok-bg: #f0fdf4;
+
+    /* PRO仕様のアニメーション・影・グラデーション用変数 */
+    --primary-hover: #4f46e5;
+    --primary-light: #eef2ff;
+    --primary-grad: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    --shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.05), 0 1px 2px 0 rgba(0,0,0,0.03);
+    --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+    --shadow-lg: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 24px;
+    --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  body { 
+    margin: 0; 
+    background: var(--bg); 
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    font-size: 14px; 
+    line-height: 1.6; 
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+  }
+
+  /* 最先端ヘッダー（グラスモーフィズム） */
+  header { 
+    background: rgba(255, 255, 255, 0.75); 
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8); 
+    padding: 14px 28px;
+    display: flex; 
+    align-items: center; 
+    justify-content: space-between; 
+    gap: 16px;
+    box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  header h1 { 
+    font-size: 18px; 
+    font-weight: 800;
+    margin: 0; 
+    background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.03em;
+  }
+  header .who { 
+    font-size: 12px; 
+    color: var(--muted);
+    font-weight: 600;
+    background: rgba(241, 245, 249, 0.8);
+    padding: 5px 14px;
+    border-radius: 9999px;
+    border: 1px solid rgba(226, 232, 240, 0.6);
+  }
+
+  /* メインレイアウト */
+  main { 
+    max-width: 1040px; 
+    margin: 0 auto; 
+    padding: 36px 20px 60px; 
+  }
+
+  /* 洗練されたカードデザイン */
+  .card { 
+    background: var(--card); 
+    border: 1px solid rgba(226, 232, 240, 0.8); 
+    border-radius: var(--radius-md); 
+    padding: 32px; 
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-md);
+    transition: var(--transition);
+  }
+  .narrow { 
+    max-width: 420px; 
+    margin: 70px auto; 
+  }
+
+  /* 見出し・ラベル */
+  h2 { 
+    font-size: 20px; 
+    font-weight: 800;
+    margin: 0 0 20px; 
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+  label { 
+    display: block; 
+    font-size: 12px; 
+    font-weight: 700;
+    color: #475569; 
+    margin: 16px 0 6px; 
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* 入力フォーム（最先端リングエフェクト） */
+  input[type=text], input[type=password], input[type=date], select, textarea { 
+    width: 100%; 
+    padding: 11px 16px; 
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm); 
+    font-size: 14px; 
+    font-family: inherit;
+    color: var(--text);
+    background: #f8fafc;
+    transition: var(--transition);
+    outline: none;
+  }
+  input[type=text]:focus, input[type=password]:focus, input[type=date]:focus, select:focus, textarea:focus {
+    background: var(--card);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  }
+  textarea { 
+    min-height: 90px; 
+    resize: vertical;
+  }
+  select {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 16px;
+    padding-right: 40px;
+    appearance: none;
+  }
+
+  /* ボタン（スタイリッシュな立体感） */
+  button { 
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700; 
+    padding: 9px 18px; 
+    border-radius: var(--radius-sm); 
+    border: 1px solid var(--line);
+    background: var(--card); 
+    color: var(--text); 
+    cursor: pointer; 
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  button:hover:not(:disabled) {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+  }
+  button.primary { 
+    background: var(--primary-grad); 
+    color: var(--primary-text); 
+    border: none; 
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  }
+  button.primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+    transform: translateY(-2px);
+  }
+  button.danger { 
+    color: var(--danger); 
+    border-color: #fecaca; 
+    background: #fff5f5; 
+  }
+  button.danger:hover:not(:disabled) {
+    background: #fee2e2;
+    border-color: var(--danger);
+  }
+  button.small { 
+    padding: 6px 12px; 
+    font-size: 12px; 
+    border-radius: 6px;
+  }
+  button:disabled { 
+    opacity: 0.4; 
+    cursor: not-allowed; 
+  }
+
+  /* レイアウト補助 */
+  .full { width: 100%; margin-top: 24px; padding: 13px; font-size: 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .spacer { flex: 1; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+  /* メッセージ表示 */
+  .msg { 
+    padding: 12px 16px; 
+    border-radius: var(--radius-sm); 
+    margin: 16px 0 0; 
+    font-size: 13px; 
+    font-weight: 600;
+    display: none; 
+    line-height: 1.5;
+  }
+  .msg.error { 
+    display: block; 
+    background: #fef2f2; 
+    color: var(--danger); 
+    border: 1px solid #fecaca;
+  }
+  .msg.info { 
+    display: block; 
+    background: var(--ok-bg); 
+    color: #166534; 
+    border: 1px solid #bbf7d0;
+  }
+
+  /* カテゴリカード（グラバー感） */
+  .grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); 
+    gap: 18px; 
+  }
+  .cat { 
+    border: 1px solid var(--line); 
+    border-radius: var(--radius-md); 
+    padding: 24px; 
+    background: var(--card); 
+    transition: var(--transition);
+  }
+  .cat b { 
+    display: block; 
+    font-size: 16px; 
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .cat.link { cursor: pointer; }
+  .cat.link:hover { 
+    border-color: var(--primary); 
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-4px);
+  }
+
+  /* タブ */
+  .tabs { 
+    display: flex; 
+    gap: 8px; 
+    border-bottom: 1px solid var(--line); 
+    margin-bottom: 24px; 
+    flex-wrap: wrap; 
+  }
+  .tabs button { 
+    border: none; 
+    border-bottom: 2px solid transparent; 
+    border-radius: 0; 
+    background: none; 
+    padding: 10px 18px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .tabs button:hover {
+    color: var(--text);
+    background: none;
+  }
+  .tabs button.active { 
+    border-bottom-color: var(--primary); 
+    color: var(--primary); 
+    font-weight: 700; 
+    background: none;
+  }
+
+  /* テーブル（モダンミニマル） */
+  .tablewrap { 
+    overflow-x: auto; 
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    margin-top: 10px;
+  }
+  table { 
+    border-collapse: collapse; 
+    width: 100%; 
+    font-size: 13px; 
+  }
+  th, td { 
+    border-bottom: 1px solid var(--line); 
+    padding: 14px 18px; 
+    text-align: left; 
+    vertical-align: middle; 
+    white-space: nowrap; 
+  }
+  th { 
+    background: #f8fafc;
+    color: var(--muted); 
+    font-weight: 700; 
+    font-size: 11px; 
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+
+  /* タグ・ピルバッジ */
+  .tag { 
+    display: inline-block; 
+    padding: 3px 10px; 
+    border-radius: 9999px; 
+    background: #f1f5f9; 
+    color: #475569;
+    font-size: 11px; 
+    font-weight: 700;
+    margin: 1px 2px; 
+  }
+  .tag.admin { 
+    background: var(--primary-light); 
+    color: var(--primary); 
+  }
+  .tag.stopped { 
+    background: #fef2f2; 
+    color: var(--danger); 
+  }
+  .badge { 
+    display: inline-block; 
+    min-width: 18px; 
+    padding: 0 6px; 
+    margin-left: 6px; 
+    border-radius: 9999px; 
+    background: var(--danger); 
+    color: #fff; 
+    font-size: 10px; 
+    font-weight: 800; 
+    line-height: 18px; 
+    text-align: center; 
+  }
+  .newtag { 
+    display: inline-block; 
+    padding: 2px 8px; 
+    border-radius: 6px; 
+    background: #fef2f2; 
+    color: var(--danger); 
+    font-size: 11px; 
+    font-weight: 700; 
+    margin-right: 6px; 
+    border: 1px solid #fecaca;
+  }
+  .newtag.rep { 
+    background: var(--primary-light); 
+    color: var(--primary); 
+    border-color: #c7d2fe;
+  }
+
+  /* チェックボックス・ラジオボタン */
+  .checks label, .radio label { 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 8px; 
+    color: var(--text); 
+    font-size: 14px; 
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .checks label { margin: 8px 0; display: flex; }
+  .radio label { margin: 6px 20px 6px 0; }
+  input[type=checkbox], input[type=radio] {
+    accent-color: var(--primary);
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  /* 高級感のあるモーダル（極上ブラー） */
+  .overlay { 
+    position: fixed; 
+    inset: 0; 
+    background: rgba(15, 23, 42, 0.55); 
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: none; 
+    align-items: flex-start; 
+    justify-content: center; 
+    padding: 60px 16px; 
+    overflow-y: auto; 
+    z-index: 10; 
+  }
+  .overlay.show { display: flex; }
+  .dialog { 
+    background: var(--card); 
+    border-radius: var(--radius-lg); 
+    padding: 36px; 
+    width: 100%; 
+    max-width: 480px; 
+    box-shadow: var(--shadow-lg);
+    border: 1px solid rgba(255,255,255,0.8);
+    animation: dialogPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes dialogPop {
+    from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .pwbox { 
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; 
+    font-size: 26px; 
+    font-weight: 800;
+    letter-spacing: 4px; 
+    text-align: center; 
+    padding: 18px; 
+    background: var(--warn-bg); 
+    border: 2px dashed var(--warn-line); 
+    border-radius: var(--radius-sm); 
+    margin: 20px 0; 
+    color: #d97706;
+    user-select: all; 
+  }
+
+  /* ファイルリスト・パンくず */
+  .crumbs { 
+    font-size: 13px; 
+    font-weight: 600;
+    margin-bottom: 20px; 
+    color: var(--muted);
+  }
+  .crumbs a { 
+    color: var(--primary); 
+    cursor: pointer; 
+    text-decoration: none; 
+    font-weight: 700;
+  }
+  .crumbs a:hover { text-decoration: underline; }
+  .flist { list-style: none; margin: 0; padding: 0; }
+  .flist li { 
+    display: flex; 
+    align-items: center; 
+    gap: 14px; 
+    padding: 14px 12px; 
+    border-bottom: 1px solid var(--line); 
+    transition: var(--transition);
+  }
+  .flist li:hover { background: #f8fafc; }
+  .flist li:last-child { border-bottom: none; }
+  .flist .ic { 
+    width: 40px; 
+    height: 28px;
+    line-height: 28px;
+    text-align: center; 
+    font-size: 10px; 
+    font-weight: 800; 
+    color: #fff; 
+    border-radius: 6px; 
+    flex: none; 
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .flist .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+  .flist .nm.folder { cursor: pointer; color: var(--primary); font-weight: 700; }
+  .flist .nm.folder:hover { text-decoration: underline; }
+  .flist .meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  
+  .ic.folder { background: #f59e0b; } 
+  .ic.doc { background: #3b82f6; } 
+  .ic.sheet { background: #10b981; }
+  .ic.slide { background: #f97316; } 
+  .ic.pdf { background: #ef4444; } 
+  .ic.image { background: #a855f7; } 
+  .ic.file { background: #64748b; }
+
+  /* ビューア */
+  .viewer { max-width: 960px; height: calc(100vh - 100px); display: flex; flex-direction: column; }
+  .viewer .body { 
+    flex: 1; 
+    min-height: 0; 
+    margin-top: 16px; 
+    border: 1px solid var(--line); 
+    border-radius: var(--radius-sm); 
+    overflow: auto; 
+    background: #cbd5e1; 
+  }
+  .viewer iframe { width: 100%; height: 100%; border: 0; }
+  .viewer img { max-width: 100%; display: block; margin: 0 auto; }
+
+  /* タスクステータス・表示関連 */
+  .tstatus { 
+    display: inline-block; 
+    padding: 3px 12px; 
+    border-radius: 9999px; 
+    font-size: 11px; 
+    font-weight: 700;
+  }
+  .tstatus.s0 { background: #f1f5f9; color: #475569; } 
+  .tstatus.s1 { background: #fef3c7; color: #b45309; } 
+  .tstatus.s2 { background: var(--ok-bg); color: #15803d; }
+  .overdue { color: var(--danger); font-weight: 700; }
+  tr.done td { color: var(--muted); background: #fafafa; }
+  tr.done td .ttl { text-decoration: line-through; opacity: 0.6; }
+  .ttl { font-weight: 600; white-space: normal; color: var(--text); }
+  .tdetail { font-size: 12px; color: var(--muted); white-space: pre-wrap; margin-top: 4px; }
+  .scope .checks { margin-left: 20px; margin-top: 6px; }
+  .treport { 
+    margin-top: 8px; 
+    padding: 10px 14px; 
+    border-left: 3px solid var(--primary); 
+    background: #f8fafc; 
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: 12px; 
+    white-space: pre-wrap; 
+    color: #334155;
+  }
+
+  /* 非表示・ローディング (※機能維持用) */
+  .hidden { display: none !important; }
+  #loading { 
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    right: 0; 
+    height: 3px; 
+    background: var(--primary-grad); 
+    display: none; 
+    z-index: 20; 
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+  }
+
+  /* 「body .sh-」で始まるスタイル（申請画面用） */
+  body .sh-form-group { margin-bottom: 20px; }
+  body .sh-label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; }
+  body .sh-input { width: 100%; padding: 11px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  body .sh-btn { background: var(--primary-grad); color: var(--primary-text); padding: 11px 22px; border: none; border-radius: var(--radius-sm); cursor: pointer; font-weight: 700; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25); }
+</style>
+
+</head>
+<body>
+<div id="loading"></div>
+
+<header id="appHeader" class="hidden">
+  <h1 id="appTitle"></h1>
+  <div class="row">
+    <span class="who" id="whoami"></span>
+    <button class="small" onclick="showView('home')">ホーム</button>
+    <button class="small hidden" id="adminBtn" onclick="openAdmin()">管理</button>
+    <button class="small" onclick="showView('changePw')">PW変更</button>
+    <button class="small" onclick="logout()">ログアウト</button>
+  </div>
+</header>
+
+<main>
+  <!-- ログイン -->
+  <section id="view-login" class="card narrow">
+    <h2 id="loginTitle"></h2>
+    <form onsubmit="login(event)">
+      <label for="loginId">ID</label>
+      <input type="text" id="loginId" autocomplete="username" autocapitalize="off">
+      <label for="loginPw">パスワード</label>
+      <input type="password" id="loginPw" autocomplete="current-password">
+      <button class="primary full" type="submit">ログイン</button>
+    </form>
+    <div class="msg" id="loginMsg"></div>
+  </section>
+
+  <!-- PW変更 -->
+  <section id="view-changePw" class="card narrow hidden">
+    <h2>パスワード変更</h2>
+    <p class="hint" id="mustChangeNote">初回ログインのため、パスワードを変更してください。</p>
+    <form onsubmit="changePw(event)">
+      <label for="oldPw">今のパスワード</label>
+      <input type="password" id="oldPw" autocomplete="current-password">
+      <label for="newPw">新しいパスワード（8文字以上・英字と数字を含む）</label>
+      <input type="password" id="newPw" autocomplete="new-password">
+      <label for="newPw2">新しいパスワード（確認）</label>
+      <input type="password" id="newPw2" autocomplete="new-password">
+      <button class="primary full" type="submit">変更する</button>
+    </form>
+    <div class="msg" id="pwMsg"></div>
+  </section>
+
+  <!-- ホーム -->
+  <section id="view-home" class="hidden">
+    <div class="card">
+      <h2>使えるカテゴリ</h2>
+      <div class="grid" id="myCats"></div>
+      <p class="hint" id="noCats"></p>
+    </div>
+  </section>
+
+  <!-- ファイル一覧 -->
+  <section id="view-files" class="hidden">
+    <div class="card">
+      <div class="crumbs" id="crumbs"></div>
+      <ul class="flist" id="fileList"></ul>
+      <p class="hint" id="filesEmpty"></p>
+      <p class="hint">見るだけの画面です。ファイルの追加・変更は管理者が行います。</p>
+    </div>
+  </section>
+
+  <!-- 管理 -->
+  <section id="view-admin" class="hidden">
+    <div class="card">
+      <div class="tabs">
+        <button id="tab-users" class="active" onclick="adminTab('users')">ユーザー</button>
+        <button id="tab-cats" onclick="adminTab('cats')">カテゴリ</button>
+        <button id="tab-log" onclick="adminTab('log')">操作ログ</button>
+      </div>
+
+      <div id="pane-users">
+        <div class="row" style="margin-bottom:8px">
+          <input type="text" id="userFilter" placeholder="ID・氏名で絞り込み" oninput="renderUsers()" style="max-width:240px">
+          <span class="spacer"></span>
+          <button class="primary" onclick="openUserDialog(null)">＋ ユーザー追加</button>
+        </div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>ID</th><th>氏名</th><th>役割</th><th>カテゴリ</th><th>状態</th><th>最終ログイン</th><th></th></tr></thead>
+          <tbody id="userRows"></tbody>
+        </table></div>
+      </div>
+
+      <div id="pane-cats" class="hidden">
+        <div class="row" style="margin-bottom:8px">
+          <span class="hint">カテゴリ名はいつでも変えられます。削除すると、全ユーザーからそのカテゴリが外れます。</span>
+          <span class="spacer"></span>
+          <button class="primary" onclick="openCatDialog(null)">＋ カテゴリ追加</button>
+        </div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>ID</th><th>名前</th><th>説明</th><th>フォルダ</th><th>人数</th><th></th></tr></thead>
+          <tbody id="catRows"></tbody>
+        </table></div>
+      </div>
+
+      <div id="pane-log" class="hidden">
+        <p class="hint">新しい順に最大200件</p>
+        <div class="tablewrap"><table>
+          <thead><tr><th>日時</th><th>操作者</th><th>操作</th><th>対象</th><th>詳細</th></tr></thead>
+          <tbody id="logRows"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ユーザー編集 -->
+<div class="overlay" id="userDialog">
+  <div class="dialog">
+    <h2 id="userDialogTitle"></h2>
+    <label for="uId">ID（半角英数字3〜30文字・後から変更不可）</label>
+    <input type="text" id="uId" autocapitalize="off">
+    <label for="uName">氏名</label>
+    <input type="text" id="uName">
+    <label>役割</label>
+    <div class="radio">
+      <label><input type="radio" name="uRole" value="一般" checked> 一般</label>
+      <label><input type="radio" name="uRole" value="管理者"> 管理者（理事長・事務長）</label>
+    </div>
+    <label>カテゴリ（複数選べます）</label>
+    <div class="checks" id="uCats"></div>
+    <div class="msg" id="userMsg"></div>
+    <div class="row" style="margin-top:16px">
+      <button onclick="closeDialog('userDialog')">キャンセル</button>
+      <span class="spacer"></span>
+      <button class="primary" onclick="saveUser()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- カテゴリ編集 -->
+<div class="overlay" id="catDialog">
+  <div class="dialog">
+    <h2 id="catDialogTitle"></h2>
+    <label for="cName">カテゴリ名</label>
+    <input type="text" id="cName">
+    <label for="cDesc">説明（任意）</label>
+    <input type="text" id="cDesc">
+    <label for="cFolder">ドライブのフォルダ（URLを貼り付け・任意）</label>
+    <input type="text" id="cFolder" placeholder="https://drive.google.com/drive/folders/...">
+    <p class="hint">フォルダは「システム管理用アカウント」に共有しておいてください。このカテゴリの人は、中身を見るだけできます。</p>
+    <div class="msg" id="catMsg"></div>
+    <div class="row" style="margin-top:16px">
+      <button onclick="closeDialog('catDialog')">キャンセル</button>
+      <span class="spacer"></span>
+      <button class="primary" onclick="saveCat()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 初期PW表示 -->
+<div class="overlay" id="pwDialog">
+  <div class="dialog">
+    <h2>初期パスワード</h2>
+    <p id="pwDialogFor"></p>
+    <div class="pwbox" id="pwDialogValue"></div>
+    <p class="hint">この画面を閉じると二度と表示されません。本人に直接渡してください。本人は初回ログイン時に変更します。</p>
+    <button class="primary full" onclick="closeDialog('pwDialog')">控えたので閉じる</button>
+  </div>
+</div>
+
+<!-- ファイル表示 -->
+<div class="overlay" id="viewerDialog">
+  <div class="dialog viewer">
+    <div class="row">
+      <b id="viewerName" style="overflow-wrap:anywhere"></b>
+      <span class="spacer"></span>
+      <a id="viewerDownload" download><button class="small">ダウンロード</button></a>
+      <button class="small" onclick="closeViewer()">閉じる</button>
+    </div>
+    <div class="body" id="viewerBody"></div>
+  </div>
+</div>
+
+<!-- 確認 -->
+<div class="overlay" id="confirmDialog">
+  <div class="dialog">
+    <h2 id="confirmTitle"></h2>
+    <p id="confirmText"></p>
+    <div class="row" style="margin-top:16px">
+      <button id="confirmCancel" onclick="closeDialog('confirmDialog')">やめる</button>
+      <span class="spacer"></span>
+      <button class="danger" id="confirmOk">実行する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var APP_NAME = "真成会ポータル";
+  var ROLE_ADMIN = '管理者';
+  var state = { token: null, me: null, users: [], cats: [], editingUser: null, editingCat: null };
+
+  document.getElementById('appTitle').textContent = APP_NAME;
+  document.getElementById('loginTitle').textContent = APP_NAME + ' ログイン';
+
+  // ---- 共通 ----
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function $(id) { return document.getElementById(id); }
+  function setMsg(id, text, kind) { var el = $(id); el.textContent = text || ''; el.className = 'msg ' + (text ? (kind || 'error') : ''); }
+
+  /** サーバー関数を呼ぶ。失敗時の共通処理つき */
+  function call(fn, args, onOk, msgId) {
+    $('loading').style.display = 'block';
+    var runner = google.script.run
+      .withSuccessHandler(function (res) {
+        $('loading').style.display = 'none';
+        if (res && res.ok) { onOk(res); return; }
+        var m = (res && res.message) || 'エラーが発生しました';
+        if (res && res.relogin) { resetToLogin(m); return; }
+        if (msgId) setMsg(msgId, m); else alertBox(m);
+      })
+      .withFailureHandler(function (err) {
+        $('loading').style.display = 'none';
+        var m = '通信エラーが発生しました。もう一度お試しください。';
+        if (msgId) setMsg(msgId, m); else alertBox(m);
+        console.error(err);
+      });
+    runner[fn].apply(runner, args);
+  }
+
+  function alertBox(text) {
+    $('confirmTitle').textContent = 'お知らせ';
+    $('confirmText').textContent = text;
+    $('confirmOk').classList.add('hidden');
+    $('confirmCancel').textContent = '閉じる';
+    $('confirmDialog').classList.add('show');
+  }
+  function confirmBox(title, text, onOk) {
+    $('confirmTitle').textContent = title;
+    $('confirmText').textContent = text;
+    var ok = $('confirmOk');
+    ok.classList.remove('hidden');
+    $('confirmCancel').textContent = 'やめる';
+    ok.onclick = function () { closeDialog('confirmDialog'); onOk(); };
+    $('confirmDialog').classList.add('show');
+  }
+  function closeDialog(id) { $(id).classList.remove('show'); }
+
+  function showView(name) {
+    if (!state.me) name = 'login';
+    if (state.me && state.me.mustChange) name = 'changePw';
+    ['login', 'changePw', 'home', 'files', 'admin'].forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== name); });
+    $('appHeader').classList.toggle('hidden', !state.me);
+    if (name === 'changePw') {
+      $('mustChangeNote').classList.toggle('hidden', !(state.me && state.me.mustChange));
+      ['oldPw', 'newPw', 'newPw2'].forEach(function (i) { $(i).value = ''; });
+      setMsg('pwMsg', '');
+    }
+    if (name === 'home') renderHome();
+  }
+
+  function resetToLogin(message) {
+    state.token = null; state.me = null;
+    document.querySelectorAll('.overlay').forEach(function (o) { o.classList.remove('show'); });
+    showView('login');
+    setMsg('loginMsg', message || '');
+  }
+
+  // ---- ログイン ----
+  function login(e) {
+    e.preventDefault();
+    setMsg('loginMsg', '');
+    call('apiLogin', [$('loginId').value, $('loginPw').value], function (res) {
+      state.token = res.token;
+      setMe(res.me);
+      $('loginPw').value = '';
+      showView('home');
+    }, 'loginMsg');
+  }
+
+  function setMe(me) {
+    state.me = me;
+    $('whoami').textContent = me.name + '（' + me.role + '）';
+    $('adminBtn').classList.toggle('hidden', me.role !== ROLE_ADMIN);
+  }
+
+  function logout() {
+    var t = state.token;
+    resetToLogin('ログアウトしました');
+    $('loginMsg').className = 'msg info';
+    if (t) google.script.run.apiLogout(t);
+  }
+
+  function changePw(e) {
+    e.preventDefault();
+    if ($('newPw').value !== $('newPw2').value) { setMsg('pwMsg', '新しいパスワードが一致しません'); return; }
+    call('apiChangePassword', [state.token, $('oldPw').value, $('newPw').value], function () {
+      call('apiMe', [state.token], function (res) {
+        setMe(res.me);
+        showView('home');
+      });
+    }, 'pwMsg');
+  }
+
+  // ---- ホーム ----
+  function renderHome() {
+    var cats = (state.me && state.me.categories) || [];
+    $('myCats').innerHTML = cats.map(function (c) {
+      return '<div class="cat' + (c.hasFolder ? ' link' : '') + '" data-cat="' + esc(c.id) + '"><b>' + esc(c.name) + '</b><span class="hint">' +
+        esc(c.desc || (c.hasFolder ? 'クリックで資料を見る' : 'まだ資料フォルダが設定されていません')) + '</span></div>';
+    }).join('');
+    $('noCats').textContent = cats.length ? '' : 'まだカテゴリが割り当てられていません。管理者に連絡してください。';
+  }
+
+  // ---- 管理画面 ----
+  function openAdmin() {
+    showView('admin');
+    adminTab('users');
+    loadAdmin();
+  }
+  function loadAdmin(cb) {
+    call('apiAdminData', [state.token], function (res) {
+      state.users = res.users; state.cats = res.categories;
+      renderUsers(); renderCats();
+      if (cb) cb();
+    });
+  }
+  function adminTab(name) {
+    ['users', 'cats', 'log'].forEach(function (t) {
+      $('tab-' + t).classList.toggle('active', t === name);
+      $('pane-' + t).classList.toggle('hidden', t !== name);
+    });
+    if (name === 'log') loadLog();
+  }
+  function catName(id) {
+    for (var i = 0; i < state.cats.length; i++) if (state.cats[i].id === id) return state.cats[i].name;
+    return id;
+  }
+
+  function renderUsers() {
+    var q = $('userFilter').value.trim().toLowerCase();
+    var rows = state.users.filter(function (u) {
+      return !q || u.id.toLowerCase().indexOf(q) >= 0 || u.name.toLowerCase().indexOf(q) >= 0;
+    });
+    $('userRows').innerHTML = rows.map(function (u) {
+      var isMe = u.id === state.me.id;
+      var stopped = u.status === '停止';
+      var cats = u.role === ROLE_ADMIN ? '<span class="tag admin">すべて</span>'
+        : (u.cats.length ? u.cats.map(function (c) { return '<span class="tag">' + esc(catName(c)) + '</span>'; }).join('') : '<span class="hint">なし</span>');
+      return '<tr>' +
+        '<td>' + esc(u.id) + '</td>' +
+        '<td>' + esc(u.name) + (u.mustChange ? ' <span class="tag">初回PW未変更</span>' : '') + '</td>' +
+        '<td>' + (u.role === ROLE_ADMIN ? '<span class="tag admin">管理者</span>' : '一般') + '</td>' +
+        '<td style="white-space:normal">' + cats + '</td>' +
+        '<td>' + (stopped ? '<span class="tag stopped">停止</span>' : '有効') + '</td>' +
+        '<td>' + esc(u.lastLogin || '—') + '</td>' +
+        '<td class="row">' +
+          '<button class="small" data-act="edit" data-id="' + esc(u.id) + '">編集</button>' +
+          '<button class="small" data-act="reset" data-id="' + esc(u.id) + '">PW再発行</button>' +
+          (isMe ? '' : '<button class="small" data-act="' + (stopped ? 'resume' : 'stop') + '" data-id="' + esc(u.id) + '">' + (stopped ? '再開' : '停止') + '</button>' +
+                       '<button class="small danger" data-act="delete" data-id="' + esc(u.id) + '">削除</button>') +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="hint">該当なし</td></tr>';
+  }
+
+  $('userRows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var u = state.users.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+    if (!u) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'edit') openUserDialog(u);
+    if (act === 'reset') confirmBox('PW再発行', u.name + ' さんのパスワードを再発行します。今のパスワードは使えなくなります。', function () {
+      call('apiResetPassword', [state.token, u.id], function (res) { showTempPw(u, res.tempPassword); loadAdmin(); });
+    });
+    if (act === 'stop') confirmBox('停止', u.name + ' さんを停止します。すぐにログインできなくなります（データは残ります）。', function () {
+      call('apiSetStatus', [state.token, u.id, '停止'], function () { loadAdmin(); });
+    });
+    if (act === 'resume') call('apiSetStatus', [state.token, u.id, '有効'], function () { loadAdmin(); });
+    if (act === 'delete') confirmBox('削除', u.name + '（' + u.id + '）を完全に削除します。元に戻せません。', function () {
+      call('apiDeleteUser', [state.token, u.id], function () { loadAdmin(); });
+    });
+  });
+
+  function openUserDialog(u) {
+    state.editingUser = u;
+    $('userDialogTitle').textContent = u ? 'ユーザー編集' : 'ユーザー追加';
+    $('uId').value = u ? u.id : '';
+    $('uId').disabled = !!u;
+    $('uName').value = u ? u.name : '';
+    var role = u ? u.role : '一般';
+    document.querySelectorAll('input[name=uRole]').forEach(function (r) { r.checked = r.value === role; });
+    $('uCats').innerHTML = state.cats.map(function (c) {
+      var on = u && u.cats.indexOf(c.id) >= 0;
+      return '<label><input type="checkbox" value="' + esc(c.id) + '"' + (on ? ' checked' : '') + '> ' + esc(c.name) + '</label>';
+    }).join('') || '<span class="hint">カテゴリがありません</span>';
+    setMsg('userMsg', '');
+    $('userDialog').classList.add('show');
+  }
+
+  function saveUser() {
+    var u = state.editingUser;
+    var data = {
+      id: $('uId').value.trim(),
+      name: $('uName').value.trim(),
+      role: document.querySelector('input[name=uRole]:checked').value,
+      cats: Array.prototype.map.call(document.querySelectorAll('#uCats input:checked'), function (c) { return c.value; })
+    };
+    call('apiSaveUser', [state.token, data, !u], function (res) {
+      closeDialog('userDialog');
+      if (res.tempPassword) showTempPw(data, res.tempPassword);
+      loadAdmin();
+    }, 'userMsg');
+  }
+
+  function showTempPw(u, pw) {
+    $('pwDialogFor').textContent = u.name + '（ID：' + u.id + '）';
+    $('pwDialogValue').textContent = pw;
+    $('pwDialog').classList.add('show');
+  }
+
+  // ---- カテゴリ ----
+  function renderCats() {
+    $('catRows').innerHTML = state.cats.map(function (c) {
+      var n = state.users.filter(function (u) { return u.cats.indexOf(c.id) >= 0; }).length;
+      return '<tr><td>' + esc(c.id) + '</td><td>' + esc(c.name) + '</td><td style="white-space:normal">' + esc(c.desc) + '</td><td>' + (c.folderId ? '設定済' : '<span class="hint">未設定</span>') + '</td><td>' + n + '</td>' +
+        '<td class="row"><button class="small" data-act="edit" data-id="' + esc(c.id) + '">編集</button>' +
+        '<button class="small danger" data-act="delete" data-id="' + esc(c.id) + '">削除</button></td></tr>';
+    }).join('') || '<tr><td colspan="6" class="hint">カテゴリがありません</td></tr>';
+  }
+
+  $('catRows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var c = state.cats.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+    if (!c) return;
+    if (b.getAttribute('data-act') === 'edit') openCatDialog(c);
+    else confirmBox('カテゴリ削除', '「' + c.name + '」を削除します。このカテゴリが付いている全員から外れます。', function () {
+      call('apiDeleteCategory', [state.token, c.id], function () { loadAdmin(); });
+    });
+  });
+
+  function openCatDialog(c) {
+    state.editingCat = c;
+    $('catDialogTitle').textContent = c ? 'カテゴリ編集' : 'カテゴリ追加';
+    $('cName').value = c ? c.name : '';
+    $('cDesc').value = c ? c.desc : '';
+    $('cFolder').value = c && c.folderId ? 'https://drive.google.com/drive/folders/' + c.folderId : '';
+    setMsg('catMsg', '');
+    $('catDialog').classList.add('show');
+  }
+
+  function saveCat() {
+    var c = state.editingCat;
+    var data = { id: c ? c.id : '', name: $('cName').value.trim(), desc: $('cDesc').value.trim(), folder: $('cFolder').value.trim() };
+    call('apiSaveCategory', [state.token, data, !c], function () {
+      closeDialog('catDialog');
+      loadAdmin(function () {
+        call('apiMe', [state.token], function (res) { setMe(res.me); });
+      });
+    }, 'catMsg');
+  }
+
+  // ---- ファイル（見るだけ） ----
+  var KIND_ICON = { folder: '📁', doc: 'DOC', sheet: 'XLS', slide: 'PPT', pdf: 'PDF', image: 'IMG', file: 'FILE', 'other-google': 'FILE' };
+  var fileState = { catId: null, viewerUrl: null };
+
+  $('myCats').addEventListener('click', function (e) {
+    var el = e.target.closest('.cat.link');
+    if (el) openFolder(el.getAttribute('data-cat'), null);
+  });
+
+  function openFolder(catId, folderId) {
+    fileState.catId = catId;
+    call('apiListFolder', [state.token, catId, folderId], function (res) {
+      showView('files');
+      $('crumbs').innerHTML = '<a data-home="1">ホーム</a>' + res.path.map(function (p, i) {
+        return ' ＞ ' + (i === res.path.length - 1 ? '<b>' + esc(p.name) + '</b>' : '<a data-folder="' + esc(p.id) + '">' + esc(p.name) + '</a>');
+      }).join('');
+      var items = res.folders.map(function (f) {
+        return '<li><span class="ic folder">📁</span><span class="nm folder" data-folder="' + esc(f.id) + '">' + esc(f.name) + '</span><span class="meta">' + esc(f.updated) + '</span></li>';
+      }).concat(res.files.map(function (f) {
+        var canOpen = f.kind !== 'other-google';
+        return '<li><span class="ic ' + esc(f.kind === 'other-google' ? 'file' : f.kind) + '">' + esc(KIND_ICON[f.kind] || 'FILE') + '</span>' +
+          '<span class="nm">' + esc(f.name) + '</span>' +
+          '<span class="meta">' + esc(f.updated) + '</span>' +
+          (canOpen ? '<button class="small" data-file="' + esc(f.id) + '" data-name="' + esc(f.name) + '">開く</button>' : '<span class="meta">開けません</span>') + '</li>';
+      }));
+      $('fileList').innerHTML = items.join('');
+      $('filesEmpty').textContent = items.length ? '' : 'このフォルダは空です。';
+    });
+  }
+
+  $('crumbs').addEventListener('click', function (e) {
+    var a = e.target.closest('a');
+    if (!a) return;
+    if (a.getAttribute('data-home')) showView('home');
+    else openFolder(fileState.catId, a.getAttribute('data-folder'));
+  });
+
+  $('fileList').addEventListener('click', function (e) {
+    var f = e.target.closest('[data-folder]');
+    if (f) { openFolder(fileState.catId, f.getAttribute('data-folder')); return; }
+    var b = e.target.closest('button[data-file]');
+    if (b) openFile(b.getAttribute('data-file'), b.getAttribute('data-name'));
+  });
+
+  function openFile(fileId, label) {
+    call('apiGetFile', [state.token, fileState.catId, fileId], function (res) {
+      var bin = atob(res.base64);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      if (fileState.viewerUrl) URL.revokeObjectURL(fileState.viewerUrl);
+      var url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
+      fileState.viewerUrl = url;
+      $('viewerName').textContent = res.name;
+      $('viewerDownload').href = url;
+      $('viewerDownload').setAttribute('download', res.name);
+      var body = $('viewerBody');
+      if (res.mimeType === 'application/pdf') body.innerHTML = '<iframe src="' + url + '"></iframe>';
+      else if (/^image\//.test(res.mimeType)) body.innerHTML = '<img src="' + url + '" alt="">';
+      else body.innerHTML = '<p style="padding:20px">このファイルは画面に表示できません。「ダウンロード」から開いてください。</p>';
+      $('viewerDialog').classList.add('show');
+    });
+  }
+
+  function closeViewer() {
+    closeDialog('viewerDialog');
+    $('viewerBody').innerHTML = '';
+    if (fileState.viewerUrl) { URL.revokeObjectURL(fileState.viewerUrl); fileState.viewerUrl = null; }
+  }
+
+  // ---- ログ ----
+  function loadLog() {
+    call('apiGetLog', [state.token, 200], function (res) {
+      $('logRows').innerHTML = res.logs.map(function (l) {
+        return '<tr><td>' + esc(l.at) + '</td><td>' + esc(l.by) + '</td><td>' + esc(l.action) + '</td><td>' + esc(l.target) + '</td><td style="white-space:normal">' + esc(l.detail) + '</td></tr>';
+      }).join('') || '<tr><td colspan="5" class="hint">ログはまだありません</td></tr>';
+    });
+  }
+
+  showView('login');
+</script>
+<!-- 申請・承認の画面。index.html の最後の </script> と </body> の間で <?!= include_('shinsei') ?> により読み込まれます -->
+<style>
+  #view-shinsei { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
+  #view-shinsei .sh-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  #view-shinsei .sh-head h2 { margin: 0; }
+  #view-shinsei .tabs .sh-n { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px; border-radius: 9px;
+    background: var(--warn-bg); color: #8a5a00; font-size: 12px; font-weight: bold; line-height: 18px; text-align: center; }
+  .sh-kanji { flex: none; width: 38px; height: 38px; border-radius: 8px; background: var(--primary-light, #e6f0ec); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; }
+  .sh-kanji.off { background: #eceef1; color: var(--muted); }
+  .sh-types .cat { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; font: inherit; }
+  .sh-types .cat b { margin-bottom: 2px; }
+  .sh-hiyari { border-style: dashed !important; }
+  .sh-hiyari .sh-kanji { background: #fdecea; color: var(--danger); }
+  .sh-note { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin: 0 0 12px; }
+  .sh-form .sh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .sh-form .sh-wide { grid-column: 1 / -1; }
+  .sh-form .sh-sect { grid-column: 1 / -1; font-size: 12px; font-weight: bold; color: var(--muted); letter-spacing: .1em;
+    border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 16px; }
+  .sh-form .sh-sect:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+  .sh-form label { color: var(--text); font-weight: bold; }
+  .sh-req { font-size: 11px; color: var(--danger); border: 1px solid var(--danger); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-weight: normal; }
+  #view-shinsei select, #view-shinsei textarea, #view-shinsei input[type=date], #view-shinsei input[type=number], #view-shinsei input[type=search],
+  #view-shinsei .sh-ed input[type=text], #shDialog textarea {
+    width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 16px; background: var(--card); color: var(--text); }
+  #view-shinsei textarea, #shDialog textarea { min-height: 90px; resize: vertical; }
+  .sh-bad input, .sh-bad select, .sh-bad textarea { border-color: var(--danger) !important; }
+  .sh-err { color: var(--danger); font-size: 12px; margin: 2px 0 0; }
+  .sh-calc { color: var(--primary); font-size: 13px; margin-top: 8px; }
+  .sh-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 20px; }
+  .sh-rows { display: grid; grid-template-columns: 9em 1fr; margin: 0; }
+  .sh-rows dt, .sh-rows dd { margin: 0; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .sh-rows dt { color: var(--muted); font-size: 13px; padding-right: 10px; }
+  .sh-rows dd { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+  .sh-no { font-family: Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
+  .sh-done { text-align: center; padding: 16px 0; }
+  .sh-done .sh-no { display: block; font-size: 22px; color: var(--text); letter-spacing: 1px; margin: 4px 0 8px; }
+  .sh-list { list-style: none; margin: 0; padding: 0; }
+  .sh-list li { border-bottom: 1px solid var(--line); }
+  .sh-list li:last-child { border-bottom: 0; }
+  .sh-item { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 4px; border: 0; border-radius: 0;
+    background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .sh-item:hover { background: var(--bg); }
+  .sh-mid { flex: 1; min-width: 0; }
+  .sh-sub { display: block; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sh-item .sh-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
+  .sh-st { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12px; font-weight: bold; white-space: nowrap; }
+  .sh-st.pending { background: var(--warn-bg); color: #8a5a00; }
+  .sh-st.approved { background: #fdecea; color: #b42318; }
+  .sh-st.returned { background: #eef0fb; color: #4a4f9c; }
+  .sh-st.rejected, .sh-st.off { background: #eceef1; color: #4b5563; }
+  .sh-st.on { background: var(--primary-light, #e6f0ec); color: var(--primary); }
+  .sh-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .sh-tools select, .sh-tools input { flex: 1 1 140px; width: auto !important; font-size: 14px !important; padding: 7px 9px !important; }
+  .sh-summary { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .sh-summary b { font-size: 18px; color: var(--text); margin-right: 2px; }
+  .sh-empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+  #shDialog .dialog { max-width: 600px; }
+  .sh-decision { display: flex; gap: 16px; align-items: center; background: var(--bg); border-radius: 8px; padding: 12px; margin: 8px 0 12px; }
+  .sh-decision p { margin: 0; }
+  .sh-stamp { flex: none; width: 80px; height: 80px; border-radius: 50%; border: 3px double #b42318; color: #b42318;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(-9deg);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; line-height: 1.15; }
+  .sh-stamp b { font-size: 19px; letter-spacing: 2px; }
+  .sh-stamp small { font-family: Menlo, Consolas, monospace; font-size: 9px; }
+  .sh-stamp i { font-style: normal; font-size: 10px; max-width: 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sh-stamp.returned { border-color: #4a4f9c; color: #4a4f9c; }
+  .sh-stamp.rejected { border-color: #4b5563; color: #4b5563; }
+  .sh-judge { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
+  .sh-judge .row button { flex: 1 1 auto; }
+  button.sh-ok { background: #b42318; border-color: #b42318; color: #fff; }
+  .sh-homecard { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .sh-homecard .sh-mid { min-width: 200px; }
+  /* 様式の設定 */
+  .sh-ed h3 { font-size: 15px; margin: 18px 0 6px; }
+  .sh-ed .sh-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .sh-ed .sh-trow { display: flex; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .sh-ed .sh-trow:last-child { border-bottom: 0; }
+  .sh-ed .sh-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+  .sh-ed .sh-field { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg); }
+  .sh-ed .sh-frow { display: grid; grid-template-columns: 1fr 9em; gap: 8px; align-items: end; }
+  .sh-ed .sh-checks { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  .sh-ed .sh-checks label { display: inline-flex; gap: 6px; align-items: center; margin: 0; color: var(--text); font-size: 14px; }
+  .sh-ed label { margin-top: 8px; }
+  .sh-ed .sh-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sh-savebar { position: sticky; bottom: 0; background: var(--card); border-top: 1px solid var(--line); margin: 16px -20px -20px;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-radius: 0 0 10px 10px; }
+  .sh-dirty { color: #8a5a00; font-size: 13px; font-weight: bold; }
+  @media (max-width: 600px) {
+    .sh-form .sh-grid, .sh-ed .sh-pair { grid-template-columns: 1fr; }
+    .sh-ed .sh-frow { grid-template-columns: 1fr; }
+    .sh-rows { grid-template-columns: 1fr; }
+    .sh-rows dt { border-bottom: 0; padding-bottom: 0; }
+    .sh-rows dd { padding-top: 2px; }
+  }
+</style>
+
+<section id="view-shinsei" class="hidden">
+  <div class="card">
+    <div class="sh-head">
+      <h2>申請・届出</h2>
+      <span class="spacer"></span>
+      <button class="small" id="shReload">最新にする</button>
+    </div>
+    <div class="tabs" id="shTabs"></div>
+
+    <!-- 新規申請 -->
+    <div id="shPane-new">
+      <div id="shPick">
+        <p class="hint">申請の種類を選んでください。提出した申請は、本人と管理者（理事長・事務長）だけが見られます。</p>
+        <div class="grid sh-types" id="shTypes"></div>
+      </div>
+      <div id="shForm" class="hidden"></div>
+    </div>
+
+    <!-- 自分の申請 -->
+    <div id="shPane-mine" class="hidden">
+      <p class="hint">提出した申請と承認の状況です。差し戻された申請は、内容を直して再申請できます。</p>
+      <ul class="sh-list" id="shMine"></ul>
+    </div>
+
+    <!-- 承認待ち（管理者） -->
+    <div id="shPane-pending" class="hidden">
+      <div class="sh-summary" id="shSummary"></div>
+      <ul class="sh-list" id="shPending"></ul>
+    </div>
+
+    <!-- 全申請（管理者） -->
+    <div id="shPane-all" class="hidden">
+      <div class="sh-tools">
+        <select id="shFltType" aria-label="種類"></select>
+        <select id="shFltStatus" aria-label="状況">
+          <option value="">すべての状況</option><option>承認待ち</option><option>承認</option><option>差し戻し</option><option>却下</option>
+        </select>
+        <input type="search" id="shFltQ" placeholder="氏名・部署・申請番号" aria-label="キーワード">
+        <button class="small" id="shCsv">CSV出力</button>
+      </div>
+      <ul class="sh-list" id="shAll"></ul>
+    </div>
+
+    <!-- 様式の設定（管理者） -->
+    <div id="shPane-forms" class="hidden">
+      <div class="sh-ed" id="shEd"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 申請の詳細 -->
+<div class="overlay" id="shDialog">
+  <div class="dialog" id="shDialogBody"></div>
+</div>
+
+<script>
+(function () {
+  var STATUS_CLASS = { '承認待ち': 'pending', '承認': 'approved', '差し戻し': 'returned', '却下': 'rejected' };
+  var STAMP = { '承認': '承認', '差し戻し': '差戻', '却下': '却下' };
+  var KINDS = { text: '短い文', textarea: '長い文', select: '選択', date: '日付', number: '数字' };
+  var FIXED = { dept: 1, job: 1 };
+  var WD = '日月火水木金土';
+  var S = null;
+  function fresh() {
+    return { loaded: false, cfg: null, typeMap: {}, mine: [], all: [], tab: 'new', form: null, drafts: {}, open: null, confirm: null, busy: false,
+      forms: null, formsDirty: false, editId: null, cats: [] };
+  }
+  S = fresh();
+
+  // ---- ログインシステムの画面切替に「申請」を足す ----
+  var origShowView = window.showView;
+  window.showView = function (name) {
+    var sec = $('view-shinsei');
+    if (name === 'shinsei' && state.me && !state.me.mustChange) {
+      origShowView('shinsei');          // 既存の画面をすべて隠す
+      sec.classList.remove('hidden');
+      openTab(S.tab);
+      return;
+    }
+    sec.classList.add('hidden');
+    origShowView(name);
+    if (name === 'home' && state.me && !state.me.mustChange) renderHomeCard();
+  };
+  var origReset = window.resetToLogin;
+  window.resetToLogin = function (message) {
+    S = fresh();
+    // 前の人の申請が画面の裏に残らないよう、申請画面の中身をすべて消す（共用PC対策）
+    ['shForm', 'shEd', 'shMine', 'shPending', 'shAll', 'shSummary', 'shTypes', 'shDialogBody', 'shTabs'].forEach(function (id) { $(id).innerHTML = ''; });
+    $('shFltQ').value = ''; $('shFltType').value = ''; $('shFltStatus').value = '';
+    $('shForm').classList.add('hidden'); $('shPick').classList.remove('hidden');
+    var hc = $('shHomeCard'); if (hc) hc.remove();
+    origReset(message);
+  };
+
+  // ヘッダーに「申請」ボタン
+  (function () {
+    var homeBtn = document.querySelector('#appHeader .row button');
+    var b = document.createElement('button');
+    b.className = 'small';
+    b.textContent = '申請';
+    b.addEventListener('click', function () { showView('shinsei'); });
+    homeBtn.parentNode.insertBefore(b, homeBtn.nextSibling);
+  })();
+
+  // ホームの「申請・届出」カード
+  function renderHomeCard() {
+    var card = $('shHomeCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'card';
+      card.id = 'shHomeCard';
+      var home = $('view-home');
+      home.insertBefore(card, home.firstChild);
+    }
+    var admin = state.me.role === ROLE_ADMIN;
+    card.innerHTML = '<div class="sh-homecard"><div class="sh-kanji">申</div><div class="sh-mid"><b>申請・届出</b><br><span class="hint">' +
+      (admin ? '休暇申請・出張報告などの提出と、届いた申請の承認' : '休暇申請・出張報告などをこの画面から提出できます') +
+      '</span></div><span id="shHomeBadge"></span><button class="primary" id="shHomeOpen">申請画面を開く</button></div>';
+    $('shHomeOpen').addEventListener('click', function () { showView('shinsei'); });
+    if (admin) {
+      google.script.run.withSuccessHandler(function (res) {
+        if (res && res.ok && res.pending && $('shHomeBadge')) $('shHomeBadge').innerHTML = '<span class="sh-st pending">承認待ち ' + res.pending + '件</span>';
+      }).apiShinseiCount(state.token);
+    }
+  }
+
+  // ---- サーバー呼び出し ----
+  /** call() と同じだが、失敗したときに onErr(メッセージ) を呼ぶ */
+  function run(fn, args, onOk, onErr) {
+    $('loading').style.display = 'block';
+    var r = google.script.run
+      .withSuccessHandler(function (res) {
+        $('loading').style.display = 'none';
+        if (res && res.ok) { onOk(res); return; }
+        if (res && res.relogin) { resetToLogin(res.message); return; }
+        onErr((res && res.message) || 'エラーが発生しました');
+      })
+      .withFailureHandler(function () {
+        $('loading').style.display = 'none';
+        onErr('通信エラーが発生しました。もう一度お試しください。');
+      });
+    r[fn].apply(r, args);
+  }
+  function load(withConfig, cb) {
+    call('apiShinseiData', [state.token, !!withConfig], function (res) {
+      if (res.config) {
+        S.cfg = res.config;
+        S.typeMap = {};
+        res.config.types.forEach(function (t) { S.typeMap[t.id] = t; });
+        renderTypes();
+        if (S.form && !S.typeMap[S.form.type] && S.form.step !== 'done') closeForm();
+      }
+      S.mine = sortRecs(res.mine || []);
+      S.all = sortRecs(res.all || []);
+      S.loaded = true;
+      renderTabs(); renderLists();
+      if (S.open) renderDialog();
+      if (cb) cb();
+    });
+  }
+  function sortRecs(a) { return a.sort(function (x, y) { return y.sortKey - x.sortKey; }); }
+  function isAdmin() { return !!(S.cfg && S.cfg.isApprover); }
+  function pendingRecs() { return S.all.filter(function (r) { return r.status === '承認待ち'; }).reverse(); }
+
+  // ---- タブ ----
+  function tabDefs() {
+    var t = [['new', '新規申請'], ['mine', '自分の申請']];
+    if (isAdmin()) t.push(['pending', '承認待ち'], ['all', '全申請'], ['forms', '様式の設定']);
+    return t;
+  }
+  function renderTabs() {
+    var n = isAdmin() ? pendingRecs().length : 0;
+    $('shTabs').innerHTML = tabDefs().map(function (t) {
+      return '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'active' : '') + '">' + t[1] +
+        (t[0] === 'pending' && n ? '<span class="sh-n">' + n + '</span>' : '') +
+        (t[0] === 'forms' && S.formsDirty ? '<span class="sh-n">未保存</span>' : '') + '</button>';
+    }).join('');
+  }
+  function openTab(name) {
+    if (!S.loaded) { S.tab = name; load(true, function () { openTab(S.tab); }); return; }
+    if (!tabDefs().some(function (t) { return t[0] === name; })) name = 'new';
+    S.tab = name;
+    ['new', 'mine', 'pending', 'all', 'forms'].forEach(function (k) { $('shPane-' + k).classList.toggle('hidden', k !== name); });
+    renderTabs(); renderLists();
+    if (name === 'forms') { if (S.forms) renderEditor(); else loadForms(); }
+  }
+  $('shTabs').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tab]');
+    if (!b) return;
+    var t = b.getAttribute('data-tab');
+    if (t === 'new') load(true, function () { openTab(t); });
+    else if (t === 'forms') openTab(t);
+    else load(false, function () { openTab(t); });
+  });
+  $('shReload').addEventListener('click', function () { load(true); });
+
+  // ---- 共通の表示 ----
+  function pad(n) { return ('0' + n).slice(-2); }
+  function fmtDate(v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '');
+    if (!m) return v;
+    var d = new Date(+m[1], m[2] - 1, +m[3]);
+    return m[1] + '/' + m[2] + '/' + m[3] + '（' + WD.charAt(d.getDay()) + '）';
+  }
+  function dayCount(a, b) {
+    if (!a || !b) return null;
+    var n = Math.round((new Date(b) - new Date(a)) / 864e5) + 1;
+    return n > 0 ? n : null;
+  }
+  function showVal(f, v) {
+    if (v === '' || v == null) return '—';
+    if (f.type === 'date') return fmtDate(v);
+    if (f.type === 'number') return Number(v).toLocaleString('ja-JP') + ' 円';
+    return v;
+  }
+  function rowsHTML(defs, vals, range) {
+    vals = vals || {};
+    var h = defs.map(function (f) { return '<dt>' + esc(f.label) + '</dt><dd>' + esc(showVal(f, vals[f.k])) + '</dd>'; }).join('');
+    if (range) { var n = dayCount(vals[range[0]], vals[range[1]]); if (n) h += '<dt>日数</dt><dd>' + n + '日間</dd>'; }
+    return h;
+  }
+  function remember(v) {
+    var key = 'shinsei_me_' + (S.cfg ? S.cfg.myId : '');
+    try {
+      if (v) { localStorage.setItem(key, JSON.stringify(v)); return v; }
+      return JSON.parse(localStorage.getItem(key) || 'null');
+    } catch (e) { return null; }
+  }
+
+  // ---- 新規申請 ----
+  function renderTypes() {
+    var types = S.cfg.types;
+    var html = types.map(function (t) {
+      return '<button class="cat link" data-type="' + esc(t.id) + '"><span class="sh-kanji">' + esc(t.ch) + '</span><span><b>' + esc(t.label) +
+        '</b><span class="hint">' + esc(t.desc) + '</span></span></button>';
+    }).join('');
+    var url = S.cfg.hiyariUrl;
+    html += url
+      ? '<a class="cat link sh-hiyari" style="display:flex;gap:12px;text-decoration:none;color:inherit" target="_blank" rel="noopener" id="shHiyari" href="#"><span class="sh-kanji">ヒ</span><span><b>ヒヤリハット・事故報告</b><span class="hint">報告用のシステムが別の画面で開きます</span></span></a>'
+      : '<div class="cat sh-hiyari" style="display:flex;gap:12px"><span class="sh-kanji">ヒ</span><span><b>ヒヤリハット・事故報告</b><span class="hint">報告先を準備中です。これまでどおり報告用紙に記入してください。</span></span></div>';
+    $('shTypes').innerHTML = (types.length ? '' : '<p class="hint" style="grid-column:1/-1">いま受け付けている申請はありません。</p>') + html;
+  }
+  function hiyariHref() {
+    var mem = remember() || {};
+    var d = new Date();
+    var today = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    var map = { name: S.cfg.myName, dept: mem.dept || '', job: mem.job || '', date: today };
+    return S.cfg.hiyariUrl.replace(/\{(name|dept|job|date)\}/g, function (_, k) { return encodeURIComponent(map[k]); });
+  }
+  $('shTypes').addEventListener('click', function (e) {
+    var h = e.target.closest('#shHiyari');
+    if (h) { h.href = hiyariHref(); return; }   // 押した時点の氏名・日付を入れて開く
+    var b = e.target.closest('[data-type]');
+    if (b) openForm(b.getAttribute('data-type'));
+  });
+
+  function fieldHTML(f, v) {
+    var id = 'sh-f-' + f.k, ctl;
+    v = v == null ? '' : v;
+    if (f.type === 'textarea') ctl = '<textarea id="' + id + '" placeholder="' + esc(f.ph || '') + '">' + esc(v) + '</textarea>';
+    else if (f.type === 'select') ctl = '<select id="' + id + '"><option value="">選択してください</option>' + f.opts.map(function (o) {
+      return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>';
+    else ctl = '<input id="' + id + '" type="' + (f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text') + '" value="' + esc(v) +
+      '" placeholder="' + esc(f.ph || '') + '"' + (f.type === 'number' ? ' inputmode="numeric" min="0" step="1"' : '') + '>';
+    return '<div class="' + (f.wide || f.type === 'textarea' ? 'sh-wide' : '') + '" data-f="' + esc(f.k) + '"><label for="' + id + '">' + esc(f.label) +
+      (f.req ? '<span class="sh-req">必須</span>' : '') + '</label>' + ctl + '<p class="sh-err hidden"></p></div>';
+  }
+  function openForm(typeId, prefill, resubmitOf) {
+    var t = S.typeMap[typeId];
+    if (!t) { alertBox('この申請は今は受け付けていません。'); return; }
+    var vals = prefill || S.drafts[typeId] || {};
+    var mem = remember() || {};
+    if (!vals.dept && mem.dept) vals.dept = mem.dept;
+    if (!vals.job && mem.job) vals.job = mem.job;
+    S.form = { type: typeId, step: 'edit', values: vals, resubmitOf: resubmitOf || '' };
+    $('shPick').classList.add('hidden');
+    $('shForm').classList.remove('hidden');
+    renderForm();
+    window.scrollTo(0, 0);
+  }
+  function closeForm() {
+    S.form = null;
+    $('shForm').classList.add('hidden');
+    $('shForm').innerHTML = '';
+    $('shPick').classList.remove('hidden');
+  }
+  function formDefs() { var t = S.typeMap[S.form.type]; return S.cfg.common.concat(t.fields); }
+  function renderForm() {
+    var F = S.form, t = S.typeMap[F.type], box = $('shForm');
+    var head = '<div class="row" style="margin:4px 0 12px"><span class="sh-kanji">' + esc(t.ch) + '</span><div><b style="font-size:17px">' + esc(t.label) + '</b>' +
+      (F.resubmitOf ? '<br><span class="sh-no">' + esc(F.resubmitOf) + ' の再申請</span>' : '') + '</div><span class="spacer"></span>' +
+      (F.step === 'done' ? '' : '<button class="small" data-act="back">種類を選び直す</button>') + '</div>';
+    if (F.step === 'edit') {
+      box.innerHTML = head + '<p class="sh-note">患者様・利用者様のお名前は書かないでください（必要なときはIDで記入）。</p>' +
+        '<form class="sh-form" id="shTheForm" novalidate><div class="sh-grid"><div class="sh-sect">申請者　' + esc(S.cfg.myName) + '</div>' +
+        S.cfg.common.map(function (f) { return fieldHTML(f, F.values[f.k]); }).join('') +
+        '<div class="sh-sect">' + esc(t.label) + 'の内容</div>' +
+        t.fields.map(function (f) { return fieldHTML(f, F.values[f.k]); }).join('') +
+        (t.range ? '<div class="sh-wide sh-calc" id="shCalc"></div>' : '') + '</div>' +
+        '<div class="sh-actions"><button type="button" data-act="clear">入力をクリア</button><button type="submit" class="primary">確認へ進む</button></div></form>';
+      updateCalc();
+    } else if (F.step === 'review') {
+      box.innerHTML = head + '<p class="hint">内容を確認して提出してください。提出後は直せません（差し戻されたときは再申請できます）。</p>' +
+        '<dl class="sh-rows"><dt>申請者</dt><dd>' + esc(S.cfg.myName) + '</dd>' + rowsHTML(formDefs(), F.values, t.range) + '</dl>' +
+        '<div class="sh-actions"><button data-act="edit">戻って直す</button><button class="primary" data-act="submit"' + (S.busy ? ' disabled' : '') + '>' +
+        (S.busy ? '提出中…' : 'この内容で提出') + '</button></div><div class="msg" id="shSubmitMsg"></div>';
+    } else {
+      box.innerHTML = head + '<div class="sh-done"><p style="margin:0">提出しました。申請番号</p><span class="sh-no">' + esc(F.no) + '</span>' +
+        '<p class="hint" style="margin:0">管理者が確認すると「自分の申請」で状況が変わります。</p>' +
+        '<div class="sh-actions" style="justify-content:center"><button data-act="another">別の申請を作成</button><button class="primary" data-act="mine">自分の申請を見る</button></div></div>';
+    }
+  }
+  function readForm() {
+    var v = {};
+    formDefs().forEach(function (f) { var el = $('sh-f-' + f.k); v[f.k] = el ? el.value.trim() : ''; });
+    return v;
+  }
+  function updateCalc() {
+    var t = S.form && S.typeMap[S.form.type];
+    if (!t || !t.range || !$('shCalc')) return;
+    var n = dayCount(($('sh-f-' + t.range[0]) || {}).value, ($('sh-f-' + t.range[1]) || {}).value);
+    $('shCalc').textContent = n ? '期間：' + n + '日間' : '';
+  }
+  function validate(v) {
+    var t = S.typeMap[S.form.type], first = null;
+    document.querySelectorAll('#shTheForm [data-f]').forEach(function (el) {
+      el.classList.remove('sh-bad'); el.querySelector('.sh-err').classList.add('hidden');
+    });
+    function bad(k, msg) {
+      var el = null;
+      document.querySelectorAll('#shTheForm [data-f]').forEach(function (x) { if (x.getAttribute('data-f') === k) el = x; });
+      if (!el) return;
+      el.classList.add('sh-bad');
+      var e = el.querySelector('.sh-err'); e.textContent = msg; e.classList.remove('hidden');
+      first = first || el;
+    }
+    formDefs().forEach(function (f) {
+      if (f.req && !v[f.k]) bad(f.k, f.type === 'select' ? '選択してください' : '入力してください');
+      if (f.type === 'number' && v[f.k] && !/^\d{1,9}$/.test(v[f.k])) bad(f.k, '0以上の整数で入力してください');
+    });
+    if (t.range && v[t.range[0]] && v[t.range[1]] && v[t.range[1]] < v[t.range[0]]) bad(t.range[1], '開始の日付と同じか後の日付にしてください');
+    if (first) { first.scrollIntoView({ block: 'center' }); var c = first.querySelector('input,select,textarea'); if (c) c.focus(); }
+    return !first;
+  }
+  function submitForm() {
+    if (S.busy) return;
+    var F = S.form;
+    S.busy = true; renderForm();
+    run('apiShinseiSubmit', [state.token, F.type, F.values, F.resubmitOf], function (res) {
+      S.busy = false;
+      remember({ dept: F.values.dept, job: F.values.job });
+      delete S.drafts[F.type];
+      F.step = 'done'; F.no = res.no;
+      renderForm();
+      load(false);
+    }, function (m) {
+      S.busy = false; renderForm(); setMsg('shSubmitMsg', m);
+    });
+  }
+  $('shForm').addEventListener('submit', function (e) {
+    if (e.target.id !== 'shTheForm') return;
+    e.preventDefault();
+    var v = readForm();
+    if (!validate(v)) return;
+    S.form.values = v; S.drafts[S.form.type] = v;
+    S.form.step = 'review'; renderForm(); window.scrollTo(0, 0);
+  });
+  $('shForm').addEventListener('input', function (e) {
+    updateCalc();
+    if (S.form && S.form.step === 'edit') S.drafts[S.form.type] = readForm();
+    var f = e.target.closest('[data-f]');
+    if (f && f.classList.contains('sh-bad')) { f.classList.remove('sh-bad'); f.querySelector('.sh-err').classList.add('hidden'); }
+  });
+  $('shForm').addEventListener('change', updateCalc);
+  $('shForm').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var a = b.getAttribute('data-act');
+    if (a === 'back' || a === 'another') closeForm();
+    if (a === 'clear') { delete S.drafts[S.form.type]; openForm(S.form.type, {}, S.form.resubmitOf); }
+    if (a === 'edit') { S.form.step = 'edit'; renderForm(); }
+    if (a === 'submit') submitForm();
+    if (a === 'mine') { closeForm(); load(false, function () { openTab('mine'); }); }
+  });
+
+  // ---- 一覧 ----
+  function summary(r) {
+    var parts = [];
+    (r.defs || []).forEach(function (f) {
+      if (parts.length >= 2 || FIXED[f.k] || f.type === 'textarea') return;
+      var v = r.fields[f.k];
+      if (v) parts.push(f.type === 'date' ? fmtDate(v) : f.type === 'number' ? Number(v).toLocaleString('ja-JP') + '円' : v);
+    });
+    return parts.join('／');
+  }
+  function itemHTML(r, showWho) {
+    var sub = showWho ? r.applicantName + '・' + r.dept : (summary(r) || r.dept);
+    return '<li><button class="sh-item" data-no="' + esc(r.no) + '"><span class="sh-kanji">' + esc(r.ch) + '</span><span class="sh-mid"><b>' + esc(r.typeLabel) +
+      '</b><span class="sh-sub">' + esc(sub) + '</span></span><span class="sh-right"><span class="sh-st ' + (STATUS_CLASS[r.status] || '') + '">' + esc(r.status) +
+      '</span><span class="sh-no">' + esc(r.submittedAt) + '</span></span></button></li>';
+  }
+  function listHTML(recs, showWho, empty) {
+    return recs.length ? recs.map(function (r) { return itemHTML(r, showWho); }).join('') : '<li class="sh-empty">' + empty + '</li>';
+  }
+  function filtered() {
+    var ty = $('shFltType').value, st = $('shFltStatus').value, q = $('shFltQ').value.trim().toLowerCase();
+    return S.all.filter(function (r) {
+      return (!ty || r.typeLabel === ty) && (!st || r.status === st) &&
+        (!q || [r.applicantName, r.applicantId, r.dept, r.no].join(' ').toLowerCase().indexOf(q) >= 0);
+    });
+  }
+  function renderTypeFilter() {
+    var cur = $('shFltType').value, seen = {}, labels = [];
+    S.cfg.types.map(function (t) { return t.label; }).concat(S.all.map(function (r) { return r.typeLabel; })).forEach(function (l) {
+      if (l && !seen[l]) { seen[l] = 1; labels.push(l); }
+    });
+    $('shFltType').innerHTML = '<option value="">すべての種類</option>' + labels.map(function (l) {
+      return '<option' + (l === cur ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('');
+  }
+  function renderLists() {
+    if (!S.loaded) return;
+    if (S.tab === 'mine') $('shMine').innerHTML = listHTML(S.mine, false, 'まだ申請はありません。「新規申請」から作成できます。');
+    if (S.tab === 'pending') {
+      var p = pendingRecs();
+      var now = new Date(); var key = now.getFullYear() + '/' + pad(now.getMonth() + 1);
+      var month = S.all.filter(function (r) { return r.submittedAt.indexOf(key) === 0; }).length;
+      var oldest = p.length ? p[0].submittedAt.slice(0, 10) : '';
+      $('shSummary').innerHTML = '<span><b>' + p.length + '</b>件 承認待ち</span><span><b>' + month + '</b>件 今月の申請</span>' +
+        (oldest ? '<span>いちばん古い承認待ち ' + esc(oldest) + '</span>' : '');
+      $('shPending').innerHTML = listHTML(p, true, '承認待ちの申請はありません。');
+    }
+    if (S.tab === 'all') { renderTypeFilter(); $('shAll').innerHTML = listHTML(filtered(), true, '条件に合う申請はありません。'); }
+  }
+  ['shFltType', 'shFltStatus'].forEach(function (id) { $(id).addEventListener('change', renderLists); });
+  $('shFltQ').addEventListener('input', renderLists);
+  ['shMine', 'shPending', 'shAll'].forEach(function (id) {
+    $(id).addEventListener('click', function (e) {
+      var b = e.target.closest('[data-no]');
+      if (b) openDialog(b.getAttribute('data-no'));
+    });
+  });
+
+  // ---- 詳細 ----
+  function findRec(no) {
+    var a = S.all.concat(S.mine);
+    for (var i = 0; i < a.length; i++) if (a[i].no === no) return a[i];
+    return null;
+  }
+  function openDialog(no) { S.open = no; S.confirm = null; renderDialog(); $('shDialog').classList.add('show'); $('shDialog').scrollTop = 0; }
+  function closeDlg() { S.open = null; closeDialog('shDialog'); }
+  function renderDialog() {
+    var r = findRec(S.open);
+    if (!r) { closeDlg(); return; }
+    var cmt = $('shComment') ? $('shComment').value : '';
+    var dec = r.status === '承認待ち'
+      ? '<div class="sh-decision"><p><span class="sh-st pending">承認待ち</span>　<span class="hint">管理者の確認を待っています</span></p></div>'
+      : '<div class="sh-decision"><div class="sh-stamp ' + STATUS_CLASS[r.status] + '"><b>' + esc(STAMP[r.status] || '') + '</b><small>' + esc(r.decidedAt.slice(0, 10)) +
+        '</small><i>' + esc(r.deciderName) + '</i></div><div><p><span class="sh-st ' + STATUS_CLASS[r.status] + '">' + esc(r.status) + '</span></p>' +
+        '<p class="hint" style="margin-top:4px">' + esc(r.decidedAt) + '　判定：' + esc(r.deciderName) + '</p>' +
+        (r.comment ? '<p style="margin-top:6px;white-space:pre-wrap">' + esc(r.comment) + '</p>' : '') + '</div></div>';
+    var judge = '';
+    if (isAdmin()) {
+      var self = r.applicantId.toLowerCase() === S.cfg.myId.toLowerCase();
+      if (r.status === '承認待ち' && self) {
+        judge = '<div class="sh-judge"><p class="hint">ご自身の申請は判定できません。もう1人の管理者が判定します。</p></div>';
+      } else if (r.status === '承認待ち') {
+        var c = S.confirm;
+        judge = '<div class="sh-judge"><label for="shComment" style="color:var(--text);font-weight:bold">コメント（差し戻し・却下は必須）</label>' +
+          '<textarea id="shComment" placeholder="例：日付を確認のうえ再申請してください">' + esc(cmt) + '</textarea>' +
+          (c ? '<p>「' + esc(c.label) + '」で確定します。よろしいですか？</p><div class="row"><button data-act="cancel">やめる</button><button class="' +
+            (c.key === 'approved' ? 'sh-ok' : 'primary') + '" data-act="do"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? '保存中…' : esc(c.label) + 'する') + '</button></div>'
+             : '<div class="row" style="margin-top:8px"><button data-j="rejected">却下</button><button data-j="returned">差し戻し</button><button class="sh-ok" data-j="approved">承認する</button></div>') +
+          '<div class="msg" id="shJudgeMsg"></div></div>';
+      } else {
+        judge = '<div class="sh-judge">' + (S.confirm && S.confirm.key === 'undo'
+          ? '<p>判定を取り消して「承認待ち」に戻します。</p><div class="row"><button data-act="cancel">やめる</button><button class="primary" data-act="undo">取り消す</button></div>'
+          : '<div class="row"><button data-act="askundo">判定を取り消す</button></div>') + '<div class="msg" id="shJudgeMsg"></div></div>';
+      }
+    } else if (r.status === '差し戻し') {
+      judge = '<div class="sh-judge"><button class="primary full" data-act="resubmit">内容を直して再申請</button></div>';
+    }
+    $('shDialogBody').innerHTML = '<div class="row"><span class="sh-kanji">' + esc(r.ch) + '</span><div><b style="font-size:17px">' + esc(r.typeLabel) +
+      '</b><br><span class="sh-no">' + esc(r.no) + '</span></div><span class="spacer"></span><button class="small" data-act="close">閉じる</button></div>' +
+      dec + (r.changed ? '<p class="sh-note">判定のあとに申請内容がシート上で変更されています。内容を確認してください。</p>' : '') +
+      '<dl class="sh-rows"><dt>申請者</dt><dd>' + esc(r.applicantName) + '</dd><dt>提出日時</dt><dd>' + esc(r.submittedAt) + '</dd>' +
+      (r.resubmitOf ? '<dt>再申請元</dt><dd class="sh-no">' + esc(r.resubmitOf) + '</dd>' : '') + rowsHTML(r.defs, r.fields, r.range) + '</dl>' + judge;
+  }
+  $('shDialog').addEventListener('click', function (e) {
+    if (e.target.id === 'shDialog') { closeDlg(); return; }
+    var j = e.target.closest('[data-j]');
+    if (j) { S.confirm = { key: j.getAttribute('data-j'), label: j.textContent.replace('する', '') }; renderDialog(); return; }
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var a = b.getAttribute('data-act'), r = findRec(S.open);
+    if (a === 'close') closeDlg();
+    if (a === 'cancel') { S.confirm = null; renderDialog(); }
+    if (a === 'askundo') { S.confirm = { key: 'undo' }; renderDialog(); }
+    if (a === 'do') {
+      var comment = ($('shComment') || {}).value || '';
+      if (S.confirm.key !== 'approved' && !comment.trim()) { S.confirm = null; renderDialog(); setMsg('shJudgeMsg', '差し戻し・却下にはコメントを入れてください'); $('shComment').focus(); return; }
+      S.busy = true; renderDialog();
+      run('apiShinseiDecide', [state.token, r.no, S.confirm.key, comment], function () {
+        S.busy = false; S.confirm = null;
+        load(false, function () { $('shDialog').scrollTop = 0; });
+      }, function (m) {
+        S.busy = false; S.confirm = null; renderDialog(); setMsg('shJudgeMsg', m);
+      });
+    }
+    if (a === 'undo') {
+      run('apiShinseiUndo', [state.token, r.no], function () { S.confirm = null; load(false, function () { $('shDialog').scrollTop = 0; }); },
+        function (m) { S.confirm = null; renderDialog(); setMsg('shJudgeMsg', m); });
+    }
+    if (a === 'resubmit') {
+      if (!S.typeMap[r.typeId]) { alertBox('この申請の種類は今は受け付けていないため、再申請できません。管理者に相談してください。'); return; }
+      closeDlg();
+      openTab('new');
+      openForm(r.typeId, JSON.parse(JSON.stringify(r.fields)), r.no);
+    }
+  });
+
+  // ---- CSV ----
+  $('shCsv').addEventListener('click', function () {
+    var recs = filtered();
+    var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+    var head = ['申請番号', '種類', '申請者ID', '申請者', '所属部署', '職種', '提出日時', '状況', '判定者', '判定日時', 'コメント', '再申請元', '内容'];
+    var lines = recs.map(function (r) {
+      var body = (r.defs || []).filter(function (f) { return !FIXED[f.k]; }).map(function (f) { return f.label + '：' + showVal(f, r.fields[f.k]); }).join(' ／ ');
+      return [r.no, r.typeLabel, r.applicantId, r.applicantName, r.dept, r.job, r.submittedAt, r.status, r.deciderName, r.decidedAt, r.comment, r.resubmitOf, body].map(q).join(',');
+    });
+    var d = new Date();
+    var blob = new Blob(['﻿' + [head.map(q).join(',')].concat(lines).join('\r\n')], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '申請一覧_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+
+  // ==== 様式の設定（管理者） ==========================================
+  function newKey(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
+  function loadForms() {
+    $('shEd').innerHTML = '<p class="hint">読み込み中…</p>';
+    call('apiShinseiForms', [state.token], function (res) {
+      S.forms = res.forms; S.cats = res.categories || []; S.formsDirty = false; S.editId = null;
+      renderTabs(); renderEditor();
+    });
+  }
+  function edType() { for (var i = 0; i < S.forms.types.length; i++) if (S.forms.types[i].id === S.editId) return S.forms.types[i]; return null; }
+  function dirty() { if ($('shFormsMsg')) setMsg('shFormsMsg', ''); if (!S.formsDirty) { S.formsDirty = true; renderTabs(); } var d = $('shDirtyNote'); if (d) d.textContent = '保存していない変更があります'; var s = $('shSaveForms'); if (s) s.disabled = false; }
+  function jobField() { return S.forms.common.filter(function (f) { return f.k === 'job'; })[0]; }
+  function deptField() { return S.forms.common.filter(function (f) { return f.k === 'dept'; })[0]; }
+
+  function saveBar() {
+    return '<div class="sh-savebar"><span class="sh-dirty" id="shDirtyNote">' + (S.formsDirty ? '保存していない変更があります' : '') + '</span><span class="spacer"></span>' +
+      (S.formsDirty ? '<button data-ed="revert">変更を取り消す</button>' : '') +
+      '<button class="primary" id="shSaveForms" data-ed="save"' + (S.formsDirty ? '' : ' disabled') + '>保存して全員に反映</button>' +
+      '<div class="msg" id="shFormsMsg" style="flex-basis:100%"></div></div>';
+  }
+  function renderEditor() {
+    if (!S.forms) return;
+    if (S.editId && edType()) { renderTypeEditor(); return; }
+    S.editId = null;
+    var types = S.forms.types;
+    $('shEd').innerHTML =
+      '<p class="hint">ここで変えた内容は「申請様式」「申請項目」シートに保存され、保存した時点で全員の画面に反映されます。提出済みの申請は、提出したときの項目のまま残ります。</p>' +
+      '<h3>申請の種類</h3><div class="sh-box" style="padding:0 12px">' +
+      (types.length ? types.map(function (t, i) {
+        return '<div class="sh-trow"><span class="sh-kanji' + (t.show ? '' : ' off') + '">' + esc(t.ch) + '</span><div class="sh-mid"><b>' + esc(t.label) + '</b> ' +
+          '<span class="sh-st ' + (t.show ? 'on' : 'off') + '">' + (t.show ? '表示中' : '表示しない') + '</span><span class="sh-sub">' +
+          (t.cats && t.cats.length ? '対象：' + esc(catNames(t.cats)) : '対象：全員') + '・項目 ' + t.fields.length + ' 個' +
+          (t.desc ? '・' + esc(t.desc) : '') + '</span></div><div class="sh-btns">' +
+          '<button class="small" data-ed="tup" data-i="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="上へ">↑</button>' +
+          '<button class="small" data-ed="tdown" data-i="' + i + '"' + (i === types.length - 1 ? ' disabled' : '') + ' aria-label="下へ">↓</button>' +
+          '<button class="small" data-ed="toggle" data-i="' + i + '">' + (t.show ? '表示しない' : '表示する') + '</button>' +
+          '<button class="small" data-ed="edit" data-i="' + i + '">項目を編集</button></div></div>';
+      }).join('') : '<p class="hint">申請の種類がありません。</p>') +
+      '</div><button data-ed="tadd">＋ 新しい申請の種類</button>' +
+      '<h3>どの申請にも付く項目</h3><div class="sh-box"><div class="sh-pair">' +
+        '<div><label for="shEdDeptLabel">1つ目の項目名</label><input type="text" id="shEdDeptLabel" data-c="dept.label" value="' + esc(deptField().label) + '"></div>' +
+        '<div><label for="shEdDeptPh">入力例</label><input type="text" id="shEdDeptPh" data-c="dept.ph" value="' + esc(deptField().ph || '') + '"></div></div>' +
+        '<label for="shEdJobLabel">2つ目の項目名</label><input type="text" id="shEdJobLabel" data-c="job.label" value="' + esc(jobField().label) + '">' +
+        '<label for="shEdJobOpts">' + esc(jobField().label) + 'の選択肢（1行に1つ）</label><textarea id="shEdJobOpts" data-c="job.opts" rows="6">' + esc(jobField().opts.join('\n')) + '</textarea>' +
+      '</div>' + saveBar();
+  }
+  function renderTypeEditor() {
+    var t = edType();
+    var dates = t.fields.filter(function (f) { return f.type === 'date'; });
+    var rangeOpts = function (sel) {
+      return '<option value="">（なし）</option>' + dates.map(function (f) { return '<option value="' + esc(f.k) + '"' + (f.k === sel ? ' selected' : '') + '>' + esc(f.label) + '</option>'; }).join('');
+    };
+    var r = t.range || ['', ''];
+    var catsMode = !!(t.cats && t.cats.length) || S.audOpen === t.id;
+    $('shEd').innerHTML =
+      '<div class="row"><button class="small" data-ed="back">← 一覧に戻る</button><span class="hint">一覧に戻っても変更は残ります。最後に「保存して全員に反映」を押してください。</span></div>' +
+      '<h3>申請の種類</h3><div class="sh-box"><div class="sh-pair">' +
+        '<div><label for="shEdTLabel">名前</label><input type="text" id="shEdTLabel" data-t="label" maxlength="30" value="' + esc(t.label) + '"></div>' +
+        '<div><label for="shEdTCh">一覧に出す一文字</label><input type="text" id="shEdTCh" data-t="ch" maxlength="1" value="' + esc(t.ch) + '"></div></div>' +
+        '<label for="shEdTDesc">説明（選ぶ画面に出る一言）</label><input type="text" id="shEdTDesc" data-t="desc" maxlength="80" value="' + esc(t.desc || '') + '">' +
+        '<div class="sh-checks"><label><input type="checkbox" data-t="show"' + (t.show ? ' checked' : '') + '> 職員の画面に表示する</label></div>' +
+      '</div>' +
+      '<h3>表示する人</h3><div class="sh-box">' +
+        '<div class="sh-checks"><label><input type="radio" name="shAud" data-aud="all"' + (catsMode ? '' : ' checked') + '> 全員</label>' +
+        '<label><input type="radio" name="shAud" data-aud="cats"' + (catsMode ? ' checked' : '') + '> 選んだカテゴリの人だけ</label></div>' +
+        (catsMode
+          ? (S.cats.length ? '<div class="sh-checks" style="margin-top:8px">' + S.cats.map(function (c) {
+              return '<label><input type="checkbox" data-tc="' + esc(c.id) + '"' + ((t.cats || []).indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + '</label>'; }).join('') + '</div>'
+            : '<p class="sh-note" style="margin:8px 0 0">カテゴリがまだありません。</p>') +
+            '<p class="sh-err' + (t.cats && t.cats.length ? ' hidden' : '') + '" id="shAudWarn" style="margin-top:6px">カテゴリを1つ以上選んでください。選ばないまま保存すると全員に表示されます。</p>' +
+            '<p class="hint" style="margin:8px 0 0">カテゴリは上の「管理」→「カテゴリ」で作り、「ユーザー」で職員に付けます（例：「医師」カテゴリを作って医師に付ける）。資料フォルダは設定しなくてもかまいません。管理者（理事長・事務長）には、ここの設定にかかわらず全部表示されます。</p>'
+          : '') +
+      '</div>' +
+      '<h3>項目</h3>' + t.fields.map(function (f, i) {
+        return '<div class="sh-field"><div class="sh-frow"><div><label for="shEdF' + i + 'L">項目名</label><input type="text" id="shEdF' + i + 'L" data-fi="' + i + '" data-p="label" maxlength="40" value="' + esc(f.label) + '"></div>' +
+          '<div><label for="shEdF' + i + 'T">入力の形</label><select id="shEdF' + i + 'T" data-fi="' + i + '" data-p="type">' + Object.keys(KINDS).map(function (k) {
+            return '<option value="' + k + '"' + (k === f.type ? ' selected' : '') + '>' + KINDS[k] + '</option>'; }).join('') + '</select></div></div>' +
+          (f.type === 'select' ? '<label for="shEdF' + i + 'O">選択肢（1行に1つ）</label><textarea id="shEdF' + i + 'O" data-fi="' + i + '" data-p="opts" rows="4">' + esc((f.opts || []).join('\n')) + '</textarea>' : '') +
+          (f.type === 'date' || f.type === 'select' ? '' : '<label for="shEdF' + i + 'P">入力例（薄い字で出る）</label><input type="text" id="shEdF' + i + 'P" data-fi="' + i + '" data-p="ph" maxlength="80" value="' + esc(f.ph || '') + '">') +
+          '<div class="sh-checks"><label><input type="checkbox" data-fi="' + i + '" data-p="req"' + (f.req ? ' checked' : '') + '> 必須</label>' +
+          '<label><input type="checkbox" data-fi="' + i + '" data-p="wide"' + (f.wide ? ' checked' : '') + '> 横いっぱいに広げる</label>' +
+          '<span class="spacer"></span><span class="sh-btns">' +
+          '<button class="small" data-ed="fup" data-i="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="上へ">↑</button>' +
+          '<button class="small" data-ed="fdown" data-i="' + i + '"' + (i === t.fields.length - 1 ? ' disabled' : '') + ' aria-label="下へ">↓</button>' +
+          '<button class="small danger" data-ed="fdel" data-i="' + i + '">削除</button></span></div></div>';
+      }).join('') +
+      '<button data-ed="fadd">＋ 項目を追加</button>' +
+      '<h3>期間のチェック（任意）</h3><div class="sh-box"><p class="hint" style="margin:0">日付の項目を2つ選ぶと、日数を自動で表示し、終わりが始まりより前なら止めます。</p><div class="sh-pair">' +
+        '<div><label for="shEdR0">始まりの日付</label><select id="shEdR0" data-r="0">' + rangeOpts(r[0]) + '</select></div>' +
+        '<div><label for="shEdR1">終わりの日付</label><select id="shEdR1" data-r="1">' + rangeOpts(r[1]) + '</select></div></div></div>' +
+      '<div class="row" style="margin-top:16px"><span class="hint">使わないだけなら「職員の画面に表示する」を外せば隠せます。</span><span class="spacer"></span>' +
+      '<button class="small danger" data-ed="tdel">この申請の種類を削除</button></div>' +
+      saveBar();
+  }
+  function catNames(ids) {
+    return (ids || []).map(function (id) { var c = S.cats.filter(function (x) { return x.id === id; })[0]; return c ? c.name : id; }).join('・');
+  }
+  function move(arr, i, d) { var j = i + d; if (j < 0 || j >= arr.length) return; var x = arr[i]; arr[i] = arr[j]; arr[j] = x; }
+
+  // 入力欄の変更（文字・チェック・選択）
+  $('shEd').addEventListener('input', function (e) { edInput(e.target, false); });
+  $('shEd').addEventListener('change', function (e) { edInput(e.target, true); });
+  function edInput(el, isChange) {
+    if (!S.forms) return;
+    var c = el.getAttribute('data-c'), tp = el.getAttribute('data-t'), fi = el.getAttribute('data-fi'), rr = el.getAttribute('data-r');
+    if (c) {
+      var parts = c.split('.'), f = parts[0] === 'job' ? jobField() : deptField();
+      f[parts[1]] = parts[1] === 'opts' ? el.value.split('\n') : el.value;
+      dirty(); return;
+    }
+    var t = edType(); if (!t) return;
+    var aud = el.getAttribute('data-aud'), tc = el.getAttribute('data-tc');
+    if (aud && isChange) {
+      if (aud === 'all') { t.cats = []; S.audOpen = null; } else { S.audOpen = t.id; }
+      dirty(); renderTypeEditor(); return;
+    }
+    if (tc && isChange) {
+      var cs = (t.cats || []).filter(function (x) { return x !== tc; });
+      if (el.checked) cs.push(tc);
+      t.cats = cs; dirty();
+      if ($('shAudWarn')) $('shAudWarn').classList.toggle('hidden', cs.length > 0);
+      return;
+    }
+    if (aud || tc) return;
+    if (tp) { t[tp] = el.type === 'checkbox' ? el.checked : el.value; dirty(); return; }
+    if (rr !== null) { var rg = t.range ? t.range.slice() : ['', '']; rg[+rr] = el.value; t.range = rg[0] || rg[1] ? rg : null; dirty(); return; }
+    if (fi !== null) {
+      var fld = t.fields[+fi], p = el.getAttribute('data-p');
+      if (el.type === 'checkbox') fld[p] = el.checked;
+      else if (p === 'opts') fld.opts = el.value.split('\n');
+      else fld[p] = el.value;
+      dirty();
+      if (p === 'type' && isChange) {
+        if (fld.type === 'select' && !(fld.opts && fld.opts.filter(String).length)) fld.opts = ['選択肢1', '選択肢2'];
+        if (t.range && t.range.indexOf(fld.k) >= 0 && fld.type !== 'date') t.range = null;
+        renderTypeEditor();
+      }
+    }
+  }
+  // ボタン
+  $('shEd').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-ed]');
+    if (!b || !S.forms) return;
+    var a = b.getAttribute('data-ed'), i = +b.getAttribute('data-i'), types = S.forms.types, t = edType();
+    switch (a) {
+      case 'tup': move(types, i, -1); dirty(); renderEditor(); break;
+      case 'tdown': move(types, i, 1); dirty(); renderEditor(); break;
+      case 'toggle': types[i].show = !types[i].show; dirty(); renderEditor(); break;
+      case 'edit': S.editId = types[i].id; renderEditor(); window.scrollTo(0, 0); break;
+      case 'tdel':
+        confirmBox('申請の種類を削除', '「' + t.label + '」を様式から削除します（「保存して全員に反映」を押すまでは確定しません）。提出済みの申請は残ります。', function () {
+          S.forms.types = types.filter(function (x) { return x !== t; }); S.editId = null; dirty(); renderEditor(); window.scrollTo(0, 0);
+        });
+        break;
+      case 'tadd':
+        var nt = { id: newKey('t'), label: '新しい申請', ch: '新', desc: '', show: false, range: null,
+          fields: [{ k: newKey('f'), label: '件名', type: 'text', req: true, wide: true, ph: '' }] };
+        types.push(nt); S.editId = nt.id; dirty(); renderEditor(); window.scrollTo(0, 0);
+        break;
+      case 'back': S.editId = null; renderEditor(); window.scrollTo(0, 0); break;
+      case 'fup': move(t.fields, i, -1); dirty(); renderTypeEditor(); break;
+      case 'fdown': move(t.fields, i, 1); dirty(); renderTypeEditor(); break;
+      case 'fdel':
+        var fk = t.fields[i].k;
+        t.fields.splice(i, 1);
+        if (t.range && t.range.indexOf(fk) >= 0) t.range = null;
+        dirty(); renderTypeEditor();
+        break;
+      case 'fadd': t.fields.push({ k: newKey('f'), label: '', type: 'text', req: false, wide: false, ph: '' }); dirty(); renderTypeEditor();
+        var last = document.querySelectorAll('#shEd .sh-field input[data-p="label"]'); if (last.length) last[last.length - 1].focus();
+        break;
+      case 'revert':
+        confirmBox('変更を取り消す', '保存していない変更をすべて取り消して、保存済みの様式に戻します。', function () { loadForms(); });
+        break;
+      case 'save':
+        b.disabled = true; b.textContent = '保存中…';
+        run('apiShinseiSaveForms', [state.token, S.forms], function (res) {
+          S.forms = res.forms; S.cats = res.categories || S.cats; S.formsDirty = false;
+          if (S.editId && !edType()) S.editId = null;
+          renderTabs(); renderEditor();
+          setMsg('shFormsMsg', '保存しました。職員が申請画面を開き直すと反映されます。', 'info');
+          load(true);
+        }, function (m) {
+          b.disabled = false; b.textContent = '保存して全員に反映';
+          setMsg('shFormsMsg', m);
+        });
+        break;
+    }
+  });
+})();
+</script>
+
+<!-- Supabase 版だけの調整：Googleドライブの資料表示は使わないので隠す。カテゴリは申請の振り分けに使う -->
+<style>
+  #view-home > .card:not(#shHomeCard):not(#tkHomeCard) { display: none; }
+  #catDialog label[for=cFolder], #cFolder, #catDialog .hint { display: none; }
+  #pane-cats th:nth-child(4), #pane-cats td:nth-child(4) { display: none; }
+  #logRows td:last-child { min-width: 14em; }
+</style>
+<script>
+  (function () {
+    var hint = document.querySelector('#pane-cats .hint');
+    if (hint) hint.textContent = 'カテゴリは、申請を出せる人の振り分けに使います（例：医師休暇申請は「医師」カテゴリの人だけ）。削除すると、全ユーザーからそのカテゴリが外れます。';
+    if (/xxxxxxxx|ここに/.test(SUPABASE_URL + SUPABASE_ANON_KEY)) {
+      setMsg('loginMsg', 'まだ Supabase につながっていません。index.html の最初にある SUPABASE_URL と SUPABASE_ANON_KEY を設定してください。');
+    }
+  })();
+</script>
+
+<!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が shinsei と 真成会 申請・届出 を入れる） -->
+<script>
+  (function () {
+    var APP = 'shinsei', TITLE = '真成会 申請・届出';
+    document.title = TITLE;
+    $('appTitle').textContent = TITLE;
+    $('loginTitle').textContent = TITLE + ' ログイン';
+    // 「ホーム」はこのシステムの画面そのものにする
+    var prev = window.showView;
+    window.showView = function (name) {
+      if (name === 'home' && state.me && !state.me.mustChange) name = APP;
+      prev(name);
+    };
+    var homeBtn = document.querySelector('#appHeader .row button');
+    if (homeBtn && homeBtn.textContent.trim() === 'ホーム') homeBtn.classList.add('hidden');
+  })();
+</script>
+
+</body>
+</html>
