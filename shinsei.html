@@ -5,8 +5,8 @@
 <title>真成会ポータル</title>
 <script>
   // ===== ここに Supabase の2つを貼る（Project Settings → API） ===================
-  var SUPABASE_URL = "https://wotcffijcrgkqpyagble.supabase.co";          // Project URL
-  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndvdGNmZmlqY3Jna3FweWFnYmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwNDY0NTUsImV4cCI6MjExMDYyMjQ1NX0.p02cIYTKHrlFcAuGLoqN9tlKGPFBd093X536s9pdOKE";      // anon public（または Publishable）キー
+  var SUPABASE_URL = "https://lzkeaetpykhdrwwwspjy.supabase.co";          // Project URL
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6a2VhZXRweWtoZHJ3d3dzcGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNDM3MTgsImV4cCI6MjEwOTgxOTcxOH0.w_iThhR7s9ZF2R_Co3OIedwdQcsFGSb7WqX4TTTE0uM";      // anon public（または Publishable）キー
   // ※ service_role（Secret）キーは絶対に貼らないこと
   // ============================================================================
 
@@ -1159,921 +1159,448 @@
 
   showView('login');
 </script>
-<!-- 申請・承認の画面。index.html の最後の </script> と </body> の間で <?!= include_('shinsei') ?> により読み込まれます -->
+<!-- タスク表の画面（Supabase版ポータル）。shinsei.html のあとに読み込む -->
 <style>
-  #view-shinsei { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
-  #view-shinsei .sh-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
-  #view-shinsei .sh-head h2 { margin: 0; }
-  #view-shinsei .tabs .sh-n { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px; border-radius: 9px;
-    background: var(--warn-bg); color: #8a5a00; font-size: 12px; font-weight: bold; line-height: 18px; text-align: center; }
+  /* 申請の画面と共通の部品（タスクだけのシステムでも使う） */
   .sh-kanji { flex: none; width: 38px; height: 38px; border-radius: 8px; background: var(--primary-light, #e6f0ec); color: var(--primary);
     display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; }
-  .sh-kanji.off { background: #eceef1; color: var(--muted); }
-  .sh-types .cat { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; font: inherit; }
-  .sh-types .cat b { margin-bottom: 2px; }
-  .sh-hiyari { border-style: dashed !important; }
-  .sh-hiyari .sh-kanji { background: #fdecea; color: var(--danger); }
   .sh-note { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin: 0 0 12px; }
-  .sh-form .sh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
-  .sh-form .sh-wide { grid-column: 1 / -1; }
-  .sh-form .sh-sect { grid-column: 1 / -1; font-size: 12px; font-weight: bold; color: var(--muted); letter-spacing: .1em;
-    border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 16px; }
-  .sh-form .sh-sect:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
-  .sh-form label { color: var(--text); font-weight: bold; }
   .sh-req { font-size: 11px; color: var(--danger); border: 1px solid var(--danger); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-weight: normal; }
-  #view-shinsei select, #view-shinsei textarea, #view-shinsei input[type=date], #view-shinsei input[type=time], #view-shinsei input[type=number], #view-shinsei input[type=search],
-  #view-shinsei .sh-ed input[type=text], #shDialog textarea {
-    width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 16px; background: var(--card); color: var(--text); }
-  #view-shinsei textarea, #shDialog textarea { min-height: 90px; resize: vertical; }
-  .sh-bad input, .sh-bad select, .sh-bad textarea { border-color: var(--danger) !important; }
-  .sh-err { color: var(--danger); font-size: 12px; margin: 2px 0 0; }
-  /* 選択（ボタン）・複数選択・説明（2026-11-19） */
-  .sh-form .sh-radios { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 8px 0 2px; }
-  .sh-form .sh-radios label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: normal; cursor: pointer; }
-  .sh-form .sh-radios input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); flex: none; }
-  .sh-bad .sh-radios { outline: 1px solid var(--danger); outline-offset: 2px; border-radius: 4px; }
-  .sh-help { color: var(--muted); font-size: 12px; margin: 4px 0 0; white-space: pre-line; }
-  .sh-cond { color: var(--muted); font-size: 11px; font-weight: normal; margin-left: 6px; }
-  .sh-form .sh-sect .sh-help { font-weight: normal; letter-spacing: 0; }
-  .sh-rows dt.sh-rh { grid-column: 1 / -1; color: var(--text); font-weight: bold; font-size: 13px; padding-top: 14px; }
-  .sh-calc { color: var(--primary); font-size: 13px; margin-top: 8px; }
-  .sh-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 20px; }
-  .sh-actions .sh-left { margin-right: auto; }
-  .sh-back { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 8px; padding: 8px 14px; font-weight: bold; }
-  .sh-rows { display: grid; grid-template-columns: 9em 1fr; margin: 0; }
-  .sh-rows dt, .sh-rows dd { margin: 0; padding: 8px 0; border-bottom: 1px solid var(--line); }
-  .sh-rows dt { color: var(--muted); font-size: 13px; padding-right: 10px; }
-  .sh-rows dd { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
-  .sh-no { font-family: Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
-  .sh-done { text-align: center; padding: 16px 0; }
-  .sh-done .sh-no { display: block; font-size: 22px; color: var(--text); letter-spacing: 1px; margin: 4px 0 8px; }
-  .sh-list { list-style: none; margin: 0; padding: 0; }
-  .sh-list li { border-bottom: 1px solid var(--line); }
-  .sh-list li:last-child { border-bottom: 0; }
-  .sh-item { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 4px; border: 0; border-radius: 0;
-    background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
-  .sh-item:hover { background: var(--bg); }
   .sh-mid { flex: 1; min-width: 0; }
-  .sh-sub { display: block; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sh-item .sh-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
-  .sh-st { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12px; font-weight: bold; white-space: nowrap; }
-  .sh-st.pending { background: var(--warn-bg); color: #8a5a00; }
-  .sh-st.approved { background: #fdecea; color: #b42318; }
-  .sh-st.returned { background: #eef0fb; color: #4a4f9c; }
-  .sh-st.rejected, .sh-st.off { background: #eceef1; color: #4b5563; }
-  .sh-st.on { background: var(--primary-light, #e6f0ec); color: var(--primary); }
-  .sh-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-  .sh-tools select, .sh-tools input { flex: 1 1 140px; width: auto !important; font-size: 14px !important; padding: 7px 9px !important; }
-  .sh-summary { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-  .sh-summary b { font-size: 18px; color: var(--text); margin-right: 2px; }
-  .sh-empty { color: var(--muted); text-align: center; padding: 24px 8px; }
-  #shDialog .dialog { max-width: 600px; }
-  .sh-decision { display: flex; gap: 16px; align-items: center; background: var(--bg); border-radius: 8px; padding: 12px; margin: 8px 0 12px; }
-  .sh-decision p { margin: 0; }
-  .sh-stamp { flex: none; width: 80px; height: 80px; border-radius: 50%; border: 3px double #b42318; color: #b42318;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(-9deg);
-    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; line-height: 1.15; }
-  .sh-stamp b { font-size: 19px; letter-spacing: 2px; }
-  .sh-stamp small { font-family: Menlo, Consolas, monospace; font-size: 9px; }
-  .sh-stamp i { font-style: normal; font-size: 10px; max-width: 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sh-stamp.returned { border-color: #4a4f9c; color: #4a4f9c; }
-  .sh-stamp.rejected { border-color: #4b5563; color: #4b5563; }
-  .sh-judge { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
-  .sh-judge .row button { flex: 1 1 auto; }
-  button.sh-ok { background: #b42318; border-color: #b42318; color: #fff; }
   .sh-homecard { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .sh-homecard .sh-mid { min-width: 200px; }
-  /* 様式の設定 */
-  .sh-ed h3 { font-size: 15px; margin: 18px 0 6px; }
-  .sh-ed .sh-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-  .sh-ed .sh-trow { display: flex; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .sh-ed .sh-trow:last-child { border-bottom: 0; }
-  .sh-ed .sh-btns { display: flex; gap: 4px; flex-wrap: wrap; }
-  .sh-ed .sh-field { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg); }
-  .sh-ed .sh-frow { display: grid; grid-template-columns: 1fr 9em; gap: 8px; align-items: end; }
-  .sh-ed .sh-checks { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
-  .sh-ed .sh-checks label { display: inline-flex; gap: 6px; align-items: center; margin: 0; color: var(--text); font-size: 14px; }
-  .sh-ed label { margin-top: 8px; }
-  .sh-ed .sh-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .sh-savebar { position: sticky; bottom: 0; background: var(--card); border-top: 1px solid var(--line); margin: 16px -20px -20px;
-    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-radius: 0 0 10px 10px; }
-  .sh-dirty { color: #8a5a00; font-size: 13px; font-weight: bold; }
-  @media (max-width: 600px) {
-    .sh-form .sh-grid, .sh-ed .sh-pair { grid-template-columns: 1fr; }
-    .sh-ed .sh-frow { grid-template-columns: 1fr; }
-    .sh-rows { grid-template-columns: 1fr; }
-    .sh-rows dt { border-bottom: 0; padding-bottom: 0; }
-    .sh-rows dd { padding-top: 2px; }
-  }
+  #view-tasks { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
+  .tk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .tk-head h2 { margin: 0; }
+  .tk-badge { display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px; border-radius: 9px; background: #b42318; color: #fff;
+    font-size: 11px; font-weight: bold; line-height: 18px; text-align: center; }
+  #view-tasks .tabs .tk-badge { background: var(--warn-bg); color: #8a5a00; }
+  .tk-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .tk-tools input[type=search] { flex: 1 1 180px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 14px; }
+  .tk-tools label { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; }
+  .tk-list { list-style: none; margin: 0; padding: 0; }
+  .tk-list li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+  .tk-list li:last-child { border-bottom: 0; }
+  .tk-list input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--primary); }
+  .tk-list .tk-nocheck { width: 20px; flex: none; }
+  .tk-open { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .tk-open b { display: block; overflow-wrap: anywhere; }
+  .tk-open:hover b { color: var(--primary); }
+  .tk-done b { text-decoration: line-through; color: var(--muted); }
+  .tk-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 3px; font-size: 12px; color: var(--muted); }
+  .tk-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: #eef2f7; color: var(--text); white-space: nowrap; }
+  .tk-chip.late { background: #fdecea; color: #b42318; font-weight: bold; }
+  .tk-chip.today { background: var(--warn-bg); color: #8a5a00; font-weight: bold; }
+  .tk-chip.mark { background: #b42318; color: #fff; font-weight: bold; }
+  .tk-chip.prog { background: var(--primary-light, #e6f0ec); color: var(--primary); }
+  .tk-empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+  #tkDialog .dialog { max-width: 600px; }
+  #tkDialog label { color: var(--text); font-weight: bold; }
+  #tkDialog input[type=text], #tkDialog input[type=date], #tkDialog select, #tkDialog textarea {
+    width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 16px; background: var(--card); color: var(--text); }
+  #tkDialog textarea { min-height: 80px; resize: vertical; }
+  .tk-radios { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .tk-radios label, .tk-cats label { display: inline-flex; align-items: center; gap: 6px; font-weight: normal !important; margin: 0; }
+  .tk-cats { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 0 24px; }
+  .tk-rows { display: grid; grid-template-columns: 6.5em 1fr; margin: 8px 0 0; }
+  .tk-rows dt, .tk-rows dd { margin: 0; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .tk-rows dt { color: var(--muted); font-size: 13px; }
+  .tk-rows dd { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+  .tk-status { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .tk-status button { flex: 1 1 auto; }
+  .tk-status button.on { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+  .tk-notes { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .tk-notes li { background: var(--bg); border-radius: 8px; padding: 8px 10px; max-width: 88%; }
+  .tk-notes li.mine { align-self: flex-end; background: var(--primary-light, #e6f0ec); }
+  .tk-notes .tk-nb { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tk-notes .tk-nh { font-size: 12px; color: var(--muted); }
+  .tk-sec { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .tk-sec h3 { font-size: 14px; margin: 0; }
+  #uTaskBox { border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 6px; }
+  #uTaskBox .checks label { margin: 4px 0; }
+  @media (max-width: 600px) { .tk-rows { grid-template-columns: 1fr; } .tk-rows dt { border-bottom: 0; padding-bottom: 0; } }
 </style>
 
-<section id="view-shinsei" class="hidden">
+<section id="view-tasks" class="hidden">
   <div class="card">
-    <div class="sh-head">
-      <h2>申請・届出</h2>
+    <div class="tk-head">
+      <h2>タスク</h2>
       <span class="spacer"></span>
-      <button class="small" id="shReload">最新にする</button>
+      <button class="small" id="tkReload">最新にする</button>
+      <button class="primary" id="tkNew">＋ 新しいタスク</button>
     </div>
-    <div class="tabs" id="shTabs"></div>
-
-    <!-- 新規申請 -->
-    <div id="shPane-new">
-      <div id="shPick">
-        <p class="hint">申請の種類を選んでください。提出した申請は、本人と管理者（理事長・事務長）だけが見られます。</p>
-        <div class="grid sh-types" id="shTypes"></div>
-      </div>
-      <div id="shForm" class="hidden"></div>
+    <div class="tabs" id="tkTabs"></div>
+    <div class="tk-tools">
+      <input type="search" id="tkQ" placeholder="件名・担当者で絞り込み" aria-label="絞り込み">
+      <label><input type="checkbox" id="tkShowDone"> 完了も表示</label>
     </div>
-
-    <!-- 自分の申請 -->
-    <div id="shPane-mine" class="hidden">
-      <p class="hint">提出した申請と承認の状況です。差し戻された申請は、内容を直して再申請できます。</p>
-      <ul class="sh-list" id="shMine"></ul>
-    </div>
-
-    <!-- 承認待ち（管理者） -->
-    <div id="shPane-pending" class="hidden">
-      <div class="sh-summary" id="shSummary"></div>
-      <ul class="sh-list" id="shPending"></ul>
-    </div>
-
-    <!-- 全申請（管理者） -->
-    <div id="shPane-all" class="hidden">
-      <div class="sh-tools">
-        <select id="shFltType" aria-label="種類"></select>
-        <select id="shFltStatus" aria-label="状況">
-          <option value="">すべての状況</option><option>承認待ち</option><option>承認</option><option>差し戻し</option><option>却下</option>
-        </select>
-        <input type="search" id="shFltQ" placeholder="氏名・部署・申請番号" aria-label="キーワード">
-        <button class="small" id="shCsv">CSV出力</button>
-      </div>
-      <ul class="sh-list" id="shAll"></ul>
-    </div>
-
-    <!-- 様式の設定（管理者） -->
-    <div id="shPane-forms" class="hidden">
-      <div class="sh-ed" id="shEd"></div>
-    </div>
+    <ul class="tk-list" id="tkList"></ul>
+    <p class="hint" id="tkNote"></p>
   </div>
 </section>
 
-<!-- 申請の詳細 -->
-<div class="overlay" id="shDialog">
-  <div class="dialog" id="shDialogBody"></div>
+<div class="overlay" id="tkDialog">
+  <div class="dialog" id="tkDialogBody"></div>
 </div>
 
 <script>
 (function () {
-  var STATUS_CLASS = { '承認待ち': 'pending', '承認': 'approved', '差し戻し': 'returned', '却下': 'rejected' };
-  var STAMP = { '承認': '承認', '差し戻し': '差戻', '却下': '却下' };
-  var KINDS = { text: '短い文', textarea: '長い文', select: '選択（一覧から）', radio: '選択（ボタン）', checks: '複数選択',
-    date: '日付', time: '時刻', number: '数字', head: '見出し' };
-  var CHOICE = { select: 1, radio: 1, checks: 1 };
-  var FIXED = { dept: 1, job: 1 };
-  var WD = '日月火水木金土';
-  var S = null;
-  function fresh() {
-    return { loaded: false, cfg: null, typeMap: {}, mine: [], all: [], tab: 'new', form: null, drafts: {}, open: null, confirm: null, busy: false,
-      forms: null, formsDirty: false, editId: null, cats: [] };
-  }
-  S = fresh();
+  var VIS = { self: '自分だけ', cats: 'カテゴリの人' };
+  var T = null;
+  function fresh() { return { loaded: false, me: null, tasks: [], cats: [], users: [], tab: 'mine', open: null, edit: null, notes: [], showNotes: false }; }
+  T = fresh();
 
-  // ---- ログインシステムの画面切替に「申請」を足す ----
-  var origShowView = window.showView;
+  // ---- 画面切替（ポータルの showView に「タスク」を足す） ----
+  var prevShow = window.showView;
   window.showView = function (name) {
-    var sec = $('view-shinsei');
-    if (name === 'shinsei' && state.me && !state.me.mustChange) {
-      origShowView('shinsei');          // 既存の画面をすべて隠す
+    var sec = $('view-tasks');
+    if (name === 'tasks' && state.me && !state.me.mustChange) {
+      prevShow('tasks');
       sec.classList.remove('hidden');
-      openTab(S.tab);
+      load();
       return;
     }
     sec.classList.add('hidden');
-    origShowView(name);
-    if (name === 'home' && state.me && !state.me.mustChange) renderHomeCard();
+    prevShow(name);
+    if (name === 'home' && state.me && !state.me.mustChange) { renderHomeCard(); refreshCount(); }
   };
-  var origReset = window.resetToLogin;
+  var prevReset = window.resetToLogin;
   window.resetToLogin = function (message) {
-    S = fresh();
-    // 前の人の申請が画面の裏に残らないよう、申請画面の中身をすべて消す（共用PC対策）
-    ['shForm', 'shEd', 'shMine', 'shPending', 'shAll', 'shSummary', 'shTypes', 'shDialogBody', 'shTabs'].forEach(function (id) { $(id).innerHTML = ''; });
-    $('shFltQ').value = ''; $('shFltType').value = ''; $('shFltStatus').value = '';
-    $('shForm').classList.add('hidden'); $('shPick').classList.remove('hidden');
-    var hc = $('shHomeCard'); if (hc) hc.remove();
-    origReset(message);
+    T = fresh();
+    ['tkList', 'tkTabs', 'tkDialogBody', 'tkNote'].forEach(function (id) { $(id).innerHTML = ''; });
+    $('tkQ').value = ''; $('tkShowDone').checked = false;
+    var hc = $('tkHomeCard'); if (hc) hc.remove();
+    setBadge(0);
+    prevReset(message);
   };
 
-  // ヘッダーに「申請」ボタン
-  (function () {
-    var homeBtn = document.querySelector('#appHeader .row button');
-    var b = document.createElement('button');
-    b.className = 'small';
-    b.textContent = '申請';
-    b.addEventListener('click', function () { showView('shinsei'); });
-    homeBtn.parentNode.insertBefore(b, homeBtn.nextSibling);
-  })();
+  // ヘッダーの「タスク」ボタン（件数つき）
+  var headBtn = document.createElement('button');
+  headBtn.className = 'small';
+  headBtn.id = 'tkHeadBtn';
+  headBtn.innerHTML = 'タスク<span class="tk-badge hidden" id="tkHeadBadge"></span>';
+  headBtn.addEventListener('click', function () { showView('tasks'); });
+  (function () { var home = document.querySelector('#appHeader .row button'); home.parentNode.insertBefore(headBtn, home.nextSibling); })();
 
-  // ホームの「申請・届出」カード
+  function setBadge(n) {
+    var b = $('tkHeadBadge'); if (!b) return;
+    b.textContent = n; b.classList.toggle('hidden', !n);
+    var hb = $('tkHomeBadge'); if (hb) hb.innerHTML = n ? '<span class="tk-chip mark">新着 ' + n + '件</span>' : '';
+  }
+  function refreshCount() {
+    if (!state.token) return;
+    google.script.run.withSuccessHandler(function (res) { if (res && res.ok) setBadge(res.marks); }).apiTaskCount(state.token);
+  }
   function renderHomeCard() {
-    var card = $('shHomeCard');
+    var card = $('tkHomeCard');
     if (!card) {
       card = document.createElement('div');
-      card.className = 'card';
-      card.id = 'shHomeCard';
-      var home = $('view-home');
-      home.insertBefore(card, home.firstChild);
+      card.className = 'card'; card.id = 'tkHomeCard';
+      var home = $('view-home'), sh = $('shHomeCard');
+      home.insertBefore(card, sh ? sh.nextSibling : home.firstChild);
     }
-    var admin = state.me.role === ROLE_ADMIN;
-    card.innerHTML = '<div class="sh-homecard"><div class="sh-kanji">申</div><div class="sh-mid"><b>申請・届出</b><br><span class="hint">' +
-      (admin ? '休暇申請・出張報告などの提出と、届いた申請の承認' : '休暇申請・出張報告などをこの画面から提出できます') +
-      '</span></div><span id="shHomeBadge"></span><button class="primary" id="shHomeOpen">申請画面を開く</button></div>';
-    $('shHomeOpen').addEventListener('click', function () { showView('shinsei'); });
-    if (admin) {
-      google.script.run.withSuccessHandler(function (res) {
-        if (res && res.ok && res.pending && $('shHomeBadge')) $('shHomeBadge').innerHTML = '<span class="sh-st pending">承認待ち ' + res.pending + '件</span>';
-      }).apiShinseiCount(state.token);
-    }
+    card.innerHTML = '<div class="sh-homecard"><div class="sh-kanji">務</div><div class="sh-mid"><b>タスク</b><br><span class="hint">自分のタスクと、頼まれた仕事・頼んだ仕事の確認</span></div>' +
+      '<span id="tkHomeBadge"></span><button class="primary" id="tkHomeOpen">タスクを開く</button></div>';
+    $('tkHomeOpen').addEventListener('click', function () { showView('tasks'); });
   }
 
-  // ---- サーバー呼び出し ----
-  /** call() と同じだが、失敗したときに onErr(メッセージ) を呼ぶ */
-  function run(fn, args, onOk, onErr) {
-    $('loading').style.display = 'block';
-    var r = google.script.run
-      .withSuccessHandler(function (res) {
-        $('loading').style.display = 'none';
-        if (res && res.ok) { onOk(res); return; }
-        if (res && res.relogin) { resetToLogin(res.message); return; }
-        onErr((res && res.message) || 'エラーが発生しました');
-      })
-      .withFailureHandler(function () {
-        $('loading').style.display = 'none';
-        onErr('通信エラーが発生しました。もう一度お試しください。');
-      });
-    r[fn].apply(r, args);
-  }
-  function load(withConfig, cb) {
-    call('apiShinseiData', [state.token, !!withConfig], function (res) {
-      if (res.config) {
-        S.cfg = res.config;
-        S.typeMap = {};
-        res.config.types.forEach(function (t) { S.typeMap[t.id] = t; });
-        renderTypes();
-        if (S.form && !S.typeMap[S.form.type] && S.form.step !== 'done') closeForm();
-      }
-      S.mine = sortRecs(res.mine || []);
-      S.all = sortRecs(res.all || []);
-      S.loaded = true;
-      renderTabs(); renderLists();
-      if (S.open) renderDialog();
+  // ---- 読み込み ----
+  function load(cb) {
+    call('apiTaskList', [state.token], function (res) {
+      T.me = res.me; T.tasks = res.tasks; T.cats = res.categories; T.users = res.users; T.loaded = true;
+      setBadge(res.tasks.filter(function (t) { return t.mark; }).length);
+      render();
       if (cb) cb();
     });
   }
-  function sortRecs(a) { return a.sort(function (x, y) { return y.sortKey - x.sortKey; }); }
-  function isAdmin() { return !!(S.cfg && S.cfg.isApprover); }
-  function pendingRecs() { return S.all.filter(function (r) { return r.status === '承認待ち'; }).reverse(); }
-
-  // ---- タブ ----
-  function tabDefs() {
-    var t = [['new', '新規申請'], ['mine', '自分の申請']];
-    if (isAdmin()) t.push(['pending', '承認待ち'], ['all', '全申請'], ['forms', '様式の設定']);
-    return t;
-  }
-  function renderTabs() {
-    var n = isAdmin() ? pendingRecs().length : 0;
-    $('shTabs').innerHTML = tabDefs().map(function (t) {
-      return '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'active' : '') + '">' + t[1] +
-        (t[0] === 'pending' && n ? '<span class="sh-n">' + n + '</span>' : '') +
-        (t[0] === 'forms' && S.formsDirty ? '<span class="sh-n">未保存</span>' : '') + '</button>';
-    }).join('');
-  }
-  function openTab(name) {
-    if (!S.loaded) { S.tab = name; load(true, function () { openTab(S.tab); }); return; }
-    if (!tabDefs().some(function (t) { return t[0] === name; })) name = 'new';
-    S.tab = name;
-    ['new', 'mine', 'pending', 'all', 'forms'].forEach(function (k) { $('shPane-' + k).classList.toggle('hidden', k !== name); });
-    renderTabs(); renderLists();
-    if (name === 'forms') { if (S.forms) renderEditor(); else loadForms(); }
-  }
-  $('shTabs').addEventListener('click', function (e) {
-    var b = e.target.closest('button[data-tab]');
-    if (!b) return;
-    var t = b.getAttribute('data-tab');
-    if (t === 'new') { if (S.form) closeForm(); load(true, function () { openTab(t); }); }
-    else if (t === 'forms') openTab(t);
-    else load(false, function () { openTab(t); });
-  });
-  $('shReload').addEventListener('click', function () { load(true); });
-
-  // ---- 共通の表示 ----
-  function pad(n) { return ('0' + n).slice(-2); }
-  function fmtDate(v) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '');
-    if (!m) return v;
-    var d = new Date(+m[1], m[2] - 1, +m[3]);
-    return m[1] + '/' + m[2] + '/' + m[3] + '（' + WD.charAt(d.getDay()) + '）';
-  }
-  function dayCount(a, b) {
-    if (!a || !b) return null;
-    var n = Math.round((new Date(b) - new Date(a)) / 864e5) + 1;
-    return n > 0 ? n : null;
-  }
-  function showVal(f, v) {
-    if (v === '' || v == null) return '—';
-    if (f.type === 'date') return fmtDate(v);
-    if (f.type === 'number') return Number(v).toLocaleString('ja-JP') + (yen(f) ? ' 円' : '');
-    if (f.type === 'checks') return String(v).split('\n').join('、');
-    return v;
-  }
-  /** 数字の項目は、項目名に「円」があるときだけ円で表示（年齢・点数などは円を付けない） */
-  function yen(f) { return /円/.test(f.label || ''); }
-  function rowsHTML(defs, vals, range) {
-    vals = vals || {};
-    // 空の項目は出さない（項目の多い報告書を読みやすく）。見出しは、その下に書いた項目があるときだけ出す
-    var h = '', head = null;
-    defs.forEach(function (f) {
-      if (f.type === 'head') { head = f; return; }
-      var v = vals[f.k];
-      if ((v === '' || v == null) && !f.req && !FIXED[f.k]) return;
-      if (head) { h += '<dt class="sh-rh">' + esc(head.label) + '</dt>'; head = null; }
-      h += '<dt>' + esc(f.label) + '</dt><dd>' + esc(showVal(f, v)) + '</dd>';
-    });
-    if (range) { var n = dayCount(vals[range[0]], vals[range[1]]); if (n) h += '<dt>日数</dt><dd>' + n + '日間</dd>'; }
-    return h;
-  }
-  function remember(v) {
-    var key = 'shinsei_me_' + (S.cfg ? S.cfg.myId : '');
-    try {
-      if (v) { localStorage.setItem(key, JSON.stringify(v)); return v; }
-      return JSON.parse(localStorage.getItem(key) || 'null');
-    } catch (e) { return null; }
-  }
-
-  // ---- 新規申請 ----
-  function renderTypes() {
-    var types = S.cfg.types;
-    var html = types.map(function (t) {
-      return '<button class="cat link" data-type="' + esc(t.id) + '"><span class="sh-kanji">' + esc(t.ch) + '</span><span><b>' + esc(t.label) +
-        '</b><span class="hint">' + esc(t.desc) + '</span></span></button>';
-    }).join('');
-    var url = S.cfg.hiyariUrl;
-    html += url
-      ? '<a class="cat link sh-hiyari" style="display:flex;gap:12px;text-decoration:none;color:inherit" target="_blank" rel="noopener" id="shHiyari" href="#"><span class="sh-kanji">イ</span><span><b>インシデント・アクシデント報告書</b><span class="hint">ヒヤリハット・事故の報告。報告用のシステムが別の画面で開きます</span></span></a>'
-      : '<div class="cat sh-hiyari" style="display:flex;gap:12px"><span class="sh-kanji">イ</span><span><b>インシデント・アクシデント報告書</b><span class="hint">報告先を準備中です。これまでどおり報告用紙に記入してください。</span></span></div>';
-    $('shTypes').innerHTML = (types.length ? '' : '<p class="hint" style="grid-column:1/-1">いま受け付けている申請はありません。</p>') + html;
-  }
-  function hiyariHref() {
-    var mem = remember() || {};
-    var d = new Date();
-    var today = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    var map = { name: S.cfg.myName, dept: mem.dept || '', job: mem.job || '', date: today };
-    return S.cfg.hiyariUrl.replace(/\{(name|dept|job|date)\}/g, function (_, k) { return encodeURIComponent(map[k]); });
-  }
-  $('shTypes').addEventListener('click', function (e) {
-    var h = e.target.closest('#shHiyari');
-    if (h) { h.href = hiyariHref(); return; }   // 押した時点の氏名・日付を入れて開く
-    var b = e.target.closest('[data-type]');
-    if (b) openForm(b.getAttribute('data-type'));
-  });
-
-  function fieldHTML(f, v, all) {
-    var id = 'sh-f-' + f.k, ctl;
-    v = v == null ? '' : v;
-    var help = f.note ? '<p class="sh-help">' + esc(f.note) + '</p>' : '';
-    if (f.type === 'head') return '<div class="sh-sect">' + esc(f.label) + help + '</div>';
-    if (f.type === 'radio' || f.type === 'checks') {
-      var chosen = f.type === 'checks' ? String(v).split('\n') : [v];
-      ctl = '<div class="sh-radios" id="' + id + '" role="' + (f.type === 'radio' ? 'radiogroup' : 'group') + '" aria-label="' + esc(f.label) + '">' +
-        f.opts.map(function (o, i) {
-          return '<label><input type="' + (f.type === 'radio' ? 'radio' : 'checkbox') + '" name="' + id + '" value="' + esc(o) + '"' +
-            (chosen.indexOf(o) >= 0 ? ' checked' : '') + '> ' + esc(o) + '</label>';
-        }).join('') + '</div>';
-      return '<div class="' + (f.wide ? 'sh-wide' : '') + '" data-f="' + esc(f.k) + '"><label>' + esc(f.label) +
-        (f.req ? '<span class="sh-req">必須</span>' : '') + condHTML(f, all) + '</label>' + ctl + help + '<p class="sh-err hidden"></p></div>';
-    }
-    if (f.type === 'textarea') ctl = '<textarea id="' + id + '" placeholder="' + esc(f.ph || '') + '">' + esc(v) + '</textarea>';
-    else if (f.type === 'select') ctl = '<select id="' + id + '"><option value="">選択してください</option>' + f.opts.map(function (o) {
-      return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>';
-    else ctl = '<input id="' + id + '" type="' + (f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : f.type === 'number' ? 'number' : 'text') + '" value="' + esc(v) +
-      '" placeholder="' + esc(f.ph || '') + '"' + (f.type === 'number' ? ' inputmode="numeric" min="0" step="1"' : '') + '>';
-    return '<div class="' + (f.wide || f.type === 'textarea' ? 'sh-wide' : '') + '" data-f="' + esc(f.k) + '"><label for="' + id + '">' + esc(f.label) +
-      (f.req ? '<span class="sh-req">必須</span>' : '') + condHTML(f, all) + '</label>' + ctl + help + '<p class="sh-err hidden"></p></div>';
-  }
-  /** 条件で必須の一言（例：「時間休」のとき必須） */
-  function condHTML(f, all) {
-    if (f.req || !f.reqIf || !f.reqIf.k) return '';
-    return '<span class="sh-cond">（' + esc(condLabel(f, all)) + 'のとき必須）</span>';
-  }
-  function condLabel(f, all) {
-    var src = (all || []).filter(function (x) { return x.k === f.reqIf.k; })[0];
-    return (src ? src.label + 'が' : '') + '「' + f.reqIf.v + '」';
-  }
-  /** 条件で必須の条件に当てはまるか */
-  function condMet(f, v) {
-    if (!f.reqIf || !f.reqIf.k) return false;
-    return String(v[f.reqIf.k] || '').split('\n').indexOf(f.reqIf.v) >= 0;
-  }
-  function openForm(typeId, prefill, resubmitOf) {
-    var t = S.typeMap[typeId];
-    if (!t) { alertBox('この申請は今は受け付けていません。'); return; }
-    var vals = prefill || S.drafts[typeId] || {};
-    var mem = remember() || {};
-    if (!vals.dept && mem.dept) vals.dept = mem.dept;
-    if (!vals.job && mem.job) vals.job = mem.job;
-    S.form = { type: typeId, step: 'edit', values: vals, resubmitOf: resubmitOf || '' };
-    $('shPick').classList.add('hidden');
-    $('shForm').classList.remove('hidden');
-    renderForm();
-    window.scrollTo(0, 0);
-  }
-  function closeForm() {
-    S.form = null;
-    $('shForm').classList.add('hidden');
-    $('shForm').innerHTML = '';
-    $('shPick').classList.remove('hidden');
-  }
-  function formDefs() { var t = S.typeMap[S.form.type]; return S.cfg.common.concat(t.fields); }
-  function renderForm() {
-    var F = S.form, t = S.typeMap[F.type], box = $('shForm');
-    var back = F.step === 'done' ? '' : '<button type="button" class="sh-back" data-act="back">← 申請の一覧に戻る</button>';
-    var head = back + '<div class="row" style="margin:4px 0 12px"><span class="sh-kanji">' + esc(t.ch) + '</span><div><b style="font-size:17px">' + esc(t.label) + '</b>' +
-      (F.resubmitOf ? '<br><span class="sh-no">' + esc(F.resubmitOf) + ' の再申請</span>' : '') + '</div><span class="spacer"></span>' +
-'</div>';
-    if (F.step === 'edit') {
-      box.innerHTML = head + '<p class="sh-note">患者様・利用者様のお名前は書かないでください（必要なときはIDで記入）。</p>' +
-        '<form class="sh-form" id="shTheForm" novalidate><div class="sh-grid"><div class="sh-sect">申請者　' + esc(S.cfg.myName) + '</div>' +
-        S.cfg.common.map(function (f) { return fieldHTML(f, F.values[f.k]); }).join('') +
-        (t.fields.length && t.fields[0].type === 'head' ? '' : '<div class="sh-sect">' + esc(t.label) + 'の内容</div>') +
-        t.fields.map(function (f) { return fieldHTML(f, F.values[f.k], t.fields); }).join('') +
-        (t.range ? '<div class="sh-wide sh-calc" id="shCalc"></div>' : '') + '</div>' +
-        '<div class="sh-actions"><button type="button" data-act="back" class="sh-left">← 一覧に戻る</button><button type="button" data-act="clear">入力をクリア</button><button type="submit" class="primary">確認へ進む</button></div>' +
-        '<p class="hint" style="text-align:right;margin:6px 0 0">一覧に戻っても、入力した内容はこの画面を閉じるまで残ります。</p></form>';
-      updateCalc();
-    } else if (F.step === 'review') {
-      box.innerHTML = head + '<p class="hint">内容を確認して提出してください。提出後は直せません（差し戻されたときは再申請できます）。</p>' +
-        '<dl class="sh-rows"><dt>申請者</dt><dd>' + esc(S.cfg.myName) + '</dd>' + rowsHTML(formDefs(), F.values, t.range) + '</dl>' +
-        '<div class="sh-actions"><button data-act="back" class="sh-left">← 一覧に戻る</button><button data-act="edit">戻って直す</button><button class="primary" data-act="submit"' + (S.busy ? ' disabled' : '') + '>' +
-        (S.busy ? '提出中…' : 'この内容で提出') + '</button></div><div class="msg" id="shSubmitMsg"></div>';
-    } else {
-      box.innerHTML = head + '<div class="sh-done"><p style="margin:0">提出しました。申請番号</p><span class="sh-no">' + esc(F.no) + '</span>' +
-        '<p class="hint" style="margin:0">管理者が確認すると「自分の申請」で状況が変わります。</p>' +
-        '<div class="sh-actions" style="justify-content:center"><button data-act="another">別の申請を作成</button><button class="primary" data-act="mine">自分の申請を見る</button></div></div>';
-    }
-  }
-  function readForm() {
-    var v = {};
-    formDefs().forEach(function (f) {
-      if (f.type === 'head') return;
-      var el = $('sh-f-' + f.k);
-      if (f.type === 'radio' || f.type === 'checks') {
-        // 複数選択は1行に1つ（サーバーも同じ形で受け取る）
-        v[f.k] = el ? Array.prototype.map.call(el.querySelectorAll('input:checked'), function (x) { return x.value; }).join('\n') : '';
-      } else v[f.k] = el ? el.value.trim() : '';
-    });
-    return v;
-  }
-  function updateCalc() {
-    var t = S.form && S.typeMap[S.form.type];
-    if (!t || !t.range || !$('shCalc')) return;
-    var n = dayCount(($('sh-f-' + t.range[0]) || {}).value, ($('sh-f-' + t.range[1]) || {}).value);
-    $('shCalc').textContent = n ? '期間：' + n + '日間' : '';
-  }
-  function validate(v) {
-    var t = S.typeMap[S.form.type], first = null;
-    document.querySelectorAll('#shTheForm [data-f]').forEach(function (el) {
-      el.classList.remove('sh-bad'); el.querySelector('.sh-err').classList.add('hidden');
-    });
-    function bad(k, msg) {
-      var el = null;
-      document.querySelectorAll('#shTheForm [data-f]').forEach(function (x) { if (x.getAttribute('data-f') === k) el = x; });
-      if (!el) return;
-      el.classList.add('sh-bad');
-      var e = el.querySelector('.sh-err'); e.textContent = msg; e.classList.remove('hidden');
-      first = first || el;
-    }
-    var defs = formDefs();
-    defs.forEach(function (f) {
-      if (f.type === 'head') return;
-      var choose = CHOICE[f.type] ? '選択してください' : '入力してください';
-      if (f.req && !v[f.k]) bad(f.k, choose);
-      else if (!v[f.k] && condMet(f, v)) bad(f.k, condLabel(f, defs) + 'のときは' + (CHOICE[f.type] ? '選んでください' : '入力してください'));
-      if (f.type === 'number' && v[f.k] && !/^\d{1,9}$/.test(v[f.k])) bad(f.k, '0以上の整数で入力してください');
-      if (f.type === 'time' && v[f.k] && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(v[f.k])) bad(f.k, '時刻を入れてください（例：13:30）');
-    });
-    if (t.range && v[t.range[0]] && v[t.range[1]] && v[t.range[1]] < v[t.range[0]]) bad(t.range[1], '開始の日付と同じか後の日付にしてください');
-    if (first) { first.scrollIntoView({ block: 'center' }); var c = first.querySelector('input,select,textarea'); if (c) c.focus(); }
-    return !first;
-  }
-  function submitForm() {
-    if (S.busy) return;
-    var F = S.form;
-    S.busy = true; renderForm();
-    run('apiShinseiSubmit', [state.token, F.type, F.values, F.resubmitOf], function (res) {
-      S.busy = false;
-      remember({ dept: F.values.dept, job: F.values.job });
-      delete S.drafts[F.type];
-      F.step = 'done'; F.no = res.no;
-      renderForm();
-      load(false);
-    }, function (m) {
-      S.busy = false; renderForm(); setMsg('shSubmitMsg', m);
-    });
-  }
-  $('shForm').addEventListener('submit', function (e) {
-    if (e.target.id !== 'shTheForm') return;
-    e.preventDefault();
-    var v = readForm();
-    if (!validate(v)) return;
-    S.form.values = v; S.drafts[S.form.type] = v;
-    S.form.step = 'review'; renderForm(); window.scrollTo(0, 0);
-  });
-  $('shForm').addEventListener('input', function (e) {
-    updateCalc();
-    if (S.form && S.form.step === 'edit') S.drafts[S.form.type] = readForm();
-    var f = e.target.closest('[data-f]');
-    if (f && f.classList.contains('sh-bad')) { f.classList.remove('sh-bad'); f.querySelector('.sh-err').classList.add('hidden'); }
-  });
-  $('shForm').addEventListener('change', updateCalc);
-  $('shForm').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-act]');
-    if (!b) return;
-    var a = b.getAttribute('data-act');
-    if (a === 'back' || a === 'another') closeForm();
-    if (a === 'clear') { delete S.drafts[S.form.type]; openForm(S.form.type, {}, S.form.resubmitOf); }
-    if (a === 'edit') { S.form.step = 'edit'; renderForm(); }
-    if (a === 'submit') submitForm();
-    if (a === 'mine') { closeForm(); load(false, function () { openTab('mine'); }); }
-  });
+  $('tkReload').addEventListener('click', function () { load(); });
 
   // ---- 一覧 ----
-  function summary(r) {
-    var parts = [];
-    (r.defs || []).forEach(function (f) {
-      if (parts.length >= 2 || FIXED[f.k] || f.type === 'textarea') return;
-      var v = r.fields[f.k];
-      if (v) parts.push(showVal(f, v).replace(' 円', '円'));
-    });
-    return parts.join('／');
-  }
-  function itemHTML(r, showWho) {
-    var sub = showWho ? r.applicantName + '・' + r.dept : (summary(r) || r.dept);
-    return '<li><button class="sh-item" data-no="' + esc(r.no) + '"><span class="sh-kanji">' + esc(r.ch) + '</span><span class="sh-mid"><b>' + esc(r.typeLabel) +
-      '</b><span class="sh-sub">' + esc(sub) + '</span></span><span class="sh-right"><span class="sh-st ' + (STATUS_CLASS[r.status] || '') + '">' + esc(r.status) +
-      '</span><span class="sh-no">' + esc(r.submittedAt) + '</span></span></button></li>';
-  }
-  function listHTML(recs, showWho, empty) {
-    return recs.length ? recs.map(function (r) { return itemHTML(r, showWho); }).join('') : '<li class="sh-empty">' + empty + '</li>';
-  }
-  function filtered() {
-    var ty = $('shFltType').value, st = $('shFltStatus').value, q = $('shFltQ').value.trim().toLowerCase();
-    return S.all.filter(function (r) {
-      return (!ty || r.typeLabel === ty) && (!st || r.status === st) &&
-        (!q || [r.applicantName, r.applicantId, r.dept, r.no].join(' ').toLowerCase().indexOf(q) >= 0);
+  function isMine(t) { return t.assignee.toLowerCase() === T.me.id.toLowerCase(); }
+  function isAsked(t) { return t.creator.toLowerCase() === T.me.id.toLowerCase() && !isMine(t); }
+  function tabDefs() {
+    var tabs = [['mine', '自分のタスク'], ['asked', '依頼したタスク'], ['others', T.me && T.me.seeAll ? '全職員のタスク' : '見られるタスク']];
+    return tabs.filter(function (t) {
+      if (t[0] === 'asked') return T.me.canAssign || T.tasks.some(isAsked);
+      if (t[0] === 'others') return T.tasks.some(function (x) { return !isMine(x) && !isAsked(x); });
+      return true;
     });
   }
-  function renderTypeFilter() {
-    var cur = $('shFltType').value, seen = {}, labels = [];
-    S.cfg.types.map(function (t) { return t.label; }).concat(S.all.map(function (r) { return r.typeLabel; })).forEach(function (l) {
-      if (l && !seen[l]) { seen[l] = 1; labels.push(l); }
-    });
-    $('shFltType').innerHTML = '<option value="">すべての種類</option>' + labels.map(function (l) {
-      return '<option' + (l === cur ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join('');
+  function inTab(t, tab) { return tab === 'mine' ? isMine(t) : tab === 'asked' ? isAsked(t) : (!isMine(t) && !isAsked(t)); }
+  function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function fmtDue(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); if (!m) return ''; var d = new Date(+m[1], m[2] - 1, +m[3]); return (+m[2]) + '/' + (+m[3]) + '（' + '日月火水木金土'.charAt(d.getDay()) + '）'; }
+  function dueChip(t) {
+    if (!t.due) return '';
+    var td = today(), cls = '', pre = '期限 ';
+    if (t.status !== '完了') { if (t.due < td) { cls = ' late'; pre = '期限切れ '; } else if (t.due === td) { cls = ' today'; pre = '今日まで '; } }
+    return '<span class="tk-chip' + cls + '">' + pre + esc(fmtDue(t.due)) + '</span>';
   }
-  function renderLists() {
-    if (!S.loaded) return;
-    if (S.tab === 'mine') $('shMine').innerHTML = listHTML(S.mine, false, 'まだ申請はありません。「新規申請」から作成できます。');
-    if (S.tab === 'pending') {
-      var p = pendingRecs();
-      var now = new Date(); var key = now.getFullYear() + '/' + pad(now.getMonth() + 1);
-      var month = S.all.filter(function (r) { return r.submittedAt.indexOf(key) === 0; }).length;
-      var oldest = p.length ? p[0].submittedAt.slice(0, 10) : '';
-      $('shSummary').innerHTML = '<span><b>' + p.length + '</b>件 承認待ち</span><span><b>' + month + '</b>件 今月の申請</span>' +
-        (oldest ? '<span>いちばん古い承認待ち ' + esc(oldest) + '</span>' : '');
-      $('shPending').innerHTML = listHTML(p, true, '承認待ちの申請はありません。');
-    }
-    if (S.tab === 'all') { renderTypeFilter(); $('shAll').innerHTML = listHTML(filtered(), true, '条件に合う申請はありません。'); }
+  function visText(t) {
+    if (t.vis === 'cats') return esc(t.visCatNames) + 'の人';
+    if (t.vis === 'people') return esc(t.visUserNames) + 'さん';
+    if (t.assignee.toLowerCase() !== t.creator.toLowerCase()) return '担当者と頼んだ人だけ';
+    return '自分だけ';
   }
-  ['shFltType', 'shFltStatus'].forEach(function (id) { $(id).addEventListener('change', renderLists); });
-  $('shFltQ').addEventListener('input', renderLists);
-  ['shMine', 'shPending', 'shAll'].forEach(function (id) {
-    $(id).addEventListener('click', function (e) {
-      var b = e.target.closest('[data-no]');
-      if (b) openDialog(b.getAttribute('data-no'));
+  function render() {
+    if (!T.loaded) return;
+    var defs = tabDefs();
+    if (!defs.some(function (d) { return d[0] === T.tab; })) T.tab = 'mine';
+    $('tkTabs').innerHTML = defs.map(function (d) {
+      var n = T.tasks.filter(function (t) { return inTab(t, d[0]) && t.mark; }).length;
+      return '<button data-tab="' + d[0] + '" class="' + (T.tab === d[0] ? 'active' : '') + '">' + d[1] + (n ? '<span class="tk-badge">' + n + '</span>' : '') + '</button>';
+    }).join('');
+    var q = $('tkQ').value.trim().toLowerCase(), showDone = $('tkShowDone').checked;
+    var list = T.tasks.filter(function (t) {
+      return inTab(t, T.tab) && (showDone || t.status !== '完了') &&
+        (!q || [t.title, t.assigneeName, t.creatorName].join(' ').toLowerCase().indexOf(q) >= 0);
     });
+    var hiddenDone = T.tasks.filter(function (t) { return inTab(t, T.tab) && t.status === '完了'; }).length;
+    $('tkList').innerHTML = list.length ? list.map(function (t) {
+      var who = T.tab === 'mine' ? (isAsked(t) || t.creator.toLowerCase() === T.me.id.toLowerCase() ? '' : '依頼：' + esc(t.creatorName))
+        : '担当：' + esc(t.assigneeName);
+      return '<li class="' + (t.status === '完了' ? 'tk-done' : '') + '">' +
+        (t.canDone ? '<input type="checkbox" data-done="' + t.id + '"' + (t.status === '完了' ? ' checked' : '') + ' aria-label="完了にする">' : '<span class="tk-nocheck"></span>') +
+        '<button class="tk-open" data-open="' + t.id + '"><b>' + esc(t.title) + '</b><span class="tk-meta">' +
+        (t.mark ? '<span class="tk-chip mark">' + esc(t.mark) + '</span>' : '') +
+        (t.status === '進行中' ? '<span class="tk-chip prog">進行中</span>' : '') + dueChip(t) +
+        (who ? '<span>' + who + '</span>' : '') + '<span>公開：' + visText(t) + '</span>' +
+        (t.notes ? '<span>連絡 ' + t.notes + '件</span>' : '') + '</span></button></li>';
+    }).join('') : '<li class="tk-empty">' + (T.tab === 'mine' ? 'いまのタスクはありません。「＋ 新しいタスク」から登録できます。' : T.tab === 'asked' ? '依頼中のタスクはありません。' : '見られるタスクはありません。') + '</li>';
+    $('tkNote').textContent = !showDone && hiddenDone ? '完了したタスクが ' + hiddenDone + ' 件あります（「完了も表示」で出ます）。' : '';
+  }
+  $('tkTabs').addEventListener('click', function (e) { var b = e.target.closest('[data-tab]'); if (b) { T.tab = b.getAttribute('data-tab'); render(); } });
+  $('tkQ').addEventListener('input', render);
+  $('tkShowDone').addEventListener('change', render);
+  $('tkList').addEventListener('change', function (e) {
+    var c = e.target.closest('[data-done]'); if (!c) return;
+    var id = c.getAttribute('data-done');
+    call('apiTaskStatus', [state.token, id, c.checked ? '完了' : '未着手'], function () { load(); });
   });
+  $('tkList').addEventListener('click', function (e) { var b = e.target.closest('[data-open]'); if (b) openTask(b.getAttribute('data-open')); });
 
   // ---- 詳細 ----
-  function findRec(no) {
-    var a = S.all.concat(S.mine);
-    for (var i = 0; i < a.length; i++) if (a[i].no === no) return a[i];
-    return null;
+  function findTask(id) { for (var i = 0; i < T.tasks.length; i++) if (String(T.tasks[i].id) === String(id)) return T.tasks[i]; return null; }
+  function openTask(id) {
+    call('apiTaskGet', [state.token, id], function (res) {
+      T.open = res.task; T.notes = res.notes; T.showNotes = res.showNotes; T.edit = null;
+      renderDialog(); $('tkDialog').classList.add('show'); $('tkDialog').scrollTop = 0;
+      load();   // 目印を消した状態に更新
+    });
   }
-  function openDialog(no) { S.open = no; S.confirm = null; renderDialog(); $('shDialog').classList.add('show'); $('shDialog').scrollTop = 0; }
-  function closeDlg() { S.open = null; closeDialog('shDialog'); }
+  function closeTk() { T.open = null; T.edit = null; closeDialog('tkDialog'); }
   function renderDialog() {
-    var r = findRec(S.open);
-    if (!r) { closeDlg(); return; }
-    var cmt = $('shComment') ? $('shComment').value : '';
-    var dec = r.status === '承認待ち'
-      ? '<div class="sh-decision"><p><span class="sh-st pending">承認待ち</span>　<span class="hint">管理者の確認を待っています</span></p></div>'
-      : '<div class="sh-decision"><div class="sh-stamp ' + STATUS_CLASS[r.status] + '"><b>' + esc(STAMP[r.status] || '') + '</b><small>' + esc(r.decidedAt.slice(0, 10)) +
-        '</small><i>' + esc(r.deciderName) + '</i></div><div><p><span class="sh-st ' + STATUS_CLASS[r.status] + '">' + esc(r.status) + '</span></p>' +
-        '<p class="hint" style="margin-top:4px">' + esc(r.decidedAt) + '　判定：' + esc(r.deciderName) + '</p>' +
-        (r.comment ? '<p style="margin-top:6px;white-space:pre-wrap">' + esc(r.comment) + '</p>' : '') + '</div></div>';
-    var judge = '';
-    if (isAdmin()) {
-      var self = r.applicantId.toLowerCase() === S.cfg.myId.toLowerCase();
-      if (r.status === '承認待ち' && self) {
-        judge = '<div class="sh-judge"><p class="hint">ご自身の申請は判定できません。もう1人の管理者が判定します。</p></div>';
-      } else if (r.status === '承認待ち') {
-        var c = S.confirm;
-        judge = '<div class="sh-judge"><label for="shComment" style="color:var(--text);font-weight:bold">コメント（差し戻し・却下は必須）</label>' +
-          '<textarea id="shComment" placeholder="例：日付を確認のうえ再申請してください">' + esc(cmt) + '</textarea>' +
-          (c ? '<p>「' + esc(c.label) + '」で確定します。よろしいですか？</p><div class="row"><button data-act="cancel">やめる</button><button class="' +
-            (c.key === 'approved' ? 'sh-ok' : 'primary') + '" data-act="do"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? '保存中…' : esc(c.label) + 'する') + '</button></div>'
-             : '<div class="row" style="margin-top:8px"><button data-j="rejected">却下</button><button data-j="returned">差し戻し</button><button class="sh-ok" data-j="approved">承認する</button></div>') +
-          '<div class="msg" id="shJudgeMsg"></div></div>';
-      } else {
-        judge = '<div class="sh-judge">' + (S.confirm && S.confirm.key === 'undo'
-          ? '<p>判定を取り消して「承認待ち」に戻します。</p><div class="row"><button data-act="cancel">やめる</button><button class="primary" data-act="undo">取り消す</button></div>'
-          : '<div class="row"><button data-act="askundo">判定を取り消す</button></div>') + '<div class="msg" id="shJudgeMsg"></div></div>';
-      }
-    } else if (r.status === '差し戻し') {
-      judge = '<div class="sh-judge"><button class="primary full" data-act="resubmit">内容を直して再申請</button></div>';
+    if (T.edit) { renderForm(); return; }
+    var t = T.open;
+    var head = '<div class="row"><b style="font-size:17px;overflow-wrap:anywhere;flex:1;min-width:0">' + esc(t.title) + '</b><button class="small" data-act="close">閉じる</button></div>';
+    var rows = '<dl class="tk-rows"><dt>番号</dt><dd>T' + esc(t.id) + '</dd><dt>状況</dt><dd>' + esc(t.status) + (t.doneAt ? '（' + esc(t.doneAt) + ' 完了）' : '') + '</dd>' +
+      '<dt>期限</dt><dd>' + (t.due ? esc(fmtDue(t.due)) : '—') + '</dd>' +
+      '<dt>担当</dt><dd>' + esc(t.assigneeName) + '</dd>' +
+      '<dt>頼んだ人</dt><dd>' + esc(t.creatorName) + '</dd>' +
+      '<dt>公開先</dt><dd>' + visText(t) + '</dd>' +
+      (t.detail ? '<dt>くわしく</dt><dd>' + esc(t.detail) + '</dd>' : '') +
+      '<dt>登録</dt><dd>' + esc(t.createdAt) + '</dd></dl>';
+    var status = '';
+    if (t.canEdit) {
+      status = '<div class="tk-status">' + ['未着手', '進行中', '完了'].map(function (s) {
+        return '<button data-st="' + s + '" class="' + (t.status === s ? 'on' : '') + '">' + s + '</button>'; }).join('') + '</div>';
+    } else if (t.canDone) {
+      status = '<div class="tk-status">' + (t.status === '完了'
+        ? '<button data-st="未着手">完了を取り消す</button>'
+        : '<button class="primary" data-st="完了">完了にする</button>') + '</div>';
     }
-    $('shDialogBody').innerHTML = '<div class="row"><span class="sh-kanji">' + esc(r.ch) + '</span><div><b style="font-size:17px">' + esc(r.typeLabel) +
-      '</b><br><span class="sh-no">' + esc(r.no) + '</span></div><span class="spacer"></span><button class="small" data-act="close">閉じる</button></div>' +
-      dec + (r.changed ? '<p class="sh-note">判定のあとに申請内容がシート上で変更されています。内容を確認してください。</p>' : '') +
-      '<dl class="sh-rows"><dt>申請者</dt><dd>' + esc(r.applicantName) + '</dd><dt>提出日時</dt><dd>' + esc(r.submittedAt) + '</dd>' +
-      (r.resubmitOf ? '<dt>再申請元</dt><dd class="sh-no">' + esc(r.resubmitOf) + '</dd>' : '') + rowsHTML(r.defs, r.fields, r.range) + '</dl>' + judge;
+    var notes = '';
+    // 自分用のタスク（担当＝頼んだ人）は連絡する相手がいないので、連絡の欄を出さない
+    var selfTask = t.assignee.toLowerCase() === t.creator.toLowerCase();
+    if (T.showNotes && !(selfTask && !T.notes.length)) {
+      notes = '<div class="tk-sec"><h3>連絡</h3>' +
+        (T.notes.length ? '<ul class="tk-notes">' + T.notes.map(function (n) {
+          return '<li class="' + (n.mine ? 'mine' : '') + '"><div class="tk-nh">' + esc(n.byName) + '・' + esc(n.at) + '</div><div class="tk-nb">' + esc(n.body) + '</div></li>'; }).join('') + '</ul>'
+          : '<p class="hint" style="margin:6px 0 0">まだ連絡はありません。</p>') +
+        (t.canNote && t.assignee.toLowerCase() !== t.creator.toLowerCase() ? '<label for="tkNoteText" style="margin-top:10px">' +
+          (isMine(t) ? esc(t.creatorName) + 'さん（指示した人）へ連絡' : esc(t.assigneeName) + 'さん（担当者）へ連絡') +
+          '</label><textarea id="tkNoteText" maxlength="500" placeholder="例：発注しました。届くのは来週です"></textarea>' +
+          '<div class="row" style="margin-top:6px"><span class="spacer"></span><button class="primary" data-act="note">送る</button></div>' : '') +
+        '</div>';
+    }
+    var foot = t.canEdit ? '<div class="row tk-sec"><button class="small danger" data-act="del">削除</button><span class="spacer"></span><button data-act="edit">内容を直す</button></div>'
+      : '<p class="hint tk-sec">' + (t.canDone ? '内容を変えられるのは、指示した人（' + esc(t.creatorName) + 'さん）だけです。' : 'このタスクは見るだけです。') + '</p>';
+    $('tkDialogBody').innerHTML = head + rows + status + notes + foot + '<div class="msg" id="tkMsg"></div>';
   }
-  $('shDialog').addEventListener('click', function (e) {
-    if (e.target.id === 'shDialog') { closeDlg(); return; }
-    var j = e.target.closest('[data-j]');
-    if (j) { S.confirm = { key: j.getAttribute('data-j'), label: j.textContent.replace('する', '') }; renderDialog(); return; }
-    var b = e.target.closest('[data-act]');
-    if (!b) return;
-    var a = b.getAttribute('data-act'), r = findRec(S.open);
-    if (a === 'close') closeDlg();
-    if (a === 'cancel') { S.confirm = null; renderDialog(); }
-    if (a === 'askundo') { S.confirm = { key: 'undo' }; renderDialog(); }
-    if (a === 'do') {
-      var comment = ($('shComment') || {}).value || '';
-      if (S.confirm.key !== 'approved' && !comment.trim()) { S.confirm = null; renderDialog(); setMsg('shJudgeMsg', '差し戻し・却下にはコメントを入れてください'); $('shComment').focus(); return; }
-      S.busy = true; renderDialog();
-      run('apiShinseiDecide', [state.token, r.no, S.confirm.key, comment], function () {
-        S.busy = false; S.confirm = null;
-        load(false, function () { $('shDialog').scrollTop = 0; });
-      }, function (m) {
-        S.busy = false; S.confirm = null; renderDialog(); setMsg('shJudgeMsg', m);
-      });
-    }
-    if (a === 'undo') {
-      run('apiShinseiUndo', [state.token, r.no], function () { S.confirm = null; load(false, function () { $('shDialog').scrollTop = 0; }); },
-        function (m) { S.confirm = null; renderDialog(); setMsg('shJudgeMsg', m); });
-    }
-    if (a === 'resubmit') {
-      if (!S.typeMap[r.typeId]) { alertBox('この申請の種類は今は受け付けていないため、再申請できません。管理者に相談してください。'); return; }
-      closeDlg();
-      openTab('new');
-      openForm(r.typeId, JSON.parse(JSON.stringify(r.fields)), r.no);
-    }
-  });
 
-  // ---- CSV ----
-  $('shCsv').addEventListener('click', function () {
-    var recs = filtered();
-    var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
-    var head = ['申請番号', '種類', '申請者ID', '申請者', '所属部署', '職種', '提出日時', '状況', '判定者', '判定日時', 'コメント', '再申請元', '内容'];
-    var lines = recs.map(function (r) {
-      var body = (r.defs || []).filter(function (f) { return !FIXED[f.k] && f.type !== 'head' && r.fields[f.k] !== '' && r.fields[f.k] != null; }).map(function (f) { return f.label + '：' + showVal(f, r.fields[f.k]); }).join(' ／ ');
-      return [r.no, r.typeLabel, r.applicantId, r.applicantName, r.dept, r.job, r.submittedAt, r.status, r.deciderName, r.decidedAt, r.comment, r.resubmitOf, body].map(q).join(',');
-    });
-    var d = new Date();
-    var blob = new Blob(['﻿' + [head.map(q).join(',')].concat(lines).join('\r\n')], { type: 'text/csv' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '申請一覧_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.csv';
-    document.body.appendChild(a); a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  });
-
-  // ==== 様式の設定（管理者） ==========================================
-  function newKey(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
-  function loadForms() {
-    $('shEd').innerHTML = '<p class="hint">読み込み中…</p>';
-    call('apiShinseiForms', [state.token], function (res) {
-      S.forms = res.forms; S.cats = res.categories || []; S.formsDirty = false; S.editId = null;
-      renderTabs(); renderEditor();
-    });
+  // ---- 登録・編集フォーム ----
+  function openNew() {
+    var vis = T.me.defaultVis === 'cats' ? 'cats' : 'self', cats = (T.me.defaultCats || []).slice();
+    T.open = null;
+    T.edit = { id: '', title: '', detail: '', due: '', status: '未着手', assignee: T.me.id, vis: vis, visCats: cats, visUsers: [] };
+    renderForm(); $('tkDialog').classList.add('show'); $('tkDialog').scrollTop = 0;
+    setTimeout(function () { var f = $('tkTitle'); if (f) f.focus(); }, 50);
   }
-  function edType() { for (var i = 0; i < S.forms.types.length; i++) if (S.forms.types[i].id === S.editId) return S.forms.types[i]; return null; }
-  function dirty() { if ($('shFormsMsg')) setMsg('shFormsMsg', ''); if (!S.formsDirty) { S.formsDirty = true; renderTabs(); } var d = $('shDirtyNote'); if (d) d.textContent = '保存していない変更があります'; var s = $('shSaveForms'); if (s) s.disabled = false; }
-  function jobField() { return S.forms.common.filter(function (f) { return f.k === 'job'; })[0]; }
-  function deptField() { return S.forms.common.filter(function (f) { return f.k === 'dept'; })[0]; }
-
-  function saveBar() {
-    return '<div class="sh-savebar"><span class="sh-dirty" id="shDirtyNote">' + (S.formsDirty ? '保存していない変更があります' : '') + '</span><span class="spacer"></span>' +
-      (S.formsDirty ? '<button data-ed="revert">変更を取り消す</button>' : '') +
-      '<button class="primary" id="shSaveForms" data-ed="save"' + (S.formsDirty ? '' : ' disabled') + '>保存して全員に反映</button>' +
-      '<div class="msg" id="shFormsMsg" style="flex-basis:100%"></div></div>';
+  $('tkNew').addEventListener('click', function () { if (T.loaded) openNew(); else load(openNew); });
+  function catOptions(sel) {
+    return T.cats.length ? T.cats.map(function (c) {
+      return '<label><input type="checkbox" data-vc="' + esc(c.id) + '"' + (sel.indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + '</label>'; }).join('')
+      : '<span class="hint">選べるカテゴリがありません（管理者がカテゴリを付けると選べます）</span>';
   }
-  function renderEditor() {
-    if (!S.forms) return;
-    if (S.editId && edType()) { renderTypeEditor(); return; }
-    S.editId = null;
-    var types = S.forms.types;
-    $('shEd').innerHTML =
-      '<p class="hint">ここで変えた内容は「申請様式」「申請項目」シートに保存され、保存した時点で全員の画面に反映されます。提出済みの申請は、提出したときの項目のまま残ります。</p>' +
-      '<h3>申請の種類</h3><div class="sh-box" style="padding:0 12px">' +
-      (types.length ? types.map(function (t, i) {
-        return '<div class="sh-trow"><span class="sh-kanji' + (t.show ? '' : ' off') + '">' + esc(t.ch) + '</span><div class="sh-mid"><b>' + esc(t.label) + '</b> ' +
-          '<span class="sh-st ' + (t.show ? 'on' : 'off') + '">' + (t.show ? '表示中' : '表示しない') + '</span><span class="sh-sub">' +
-          (t.cats && t.cats.length ? '対象：' + esc(catNames(t.cats)) : '対象：全員') + '・項目 ' + t.fields.length + ' 個' +
-          (t.desc ? '・' + esc(t.desc) : '') + '</span></div><div class="sh-btns">' +
-          '<button class="small" data-ed="tup" data-i="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="上へ">↑</button>' +
-          '<button class="small" data-ed="tdown" data-i="' + i + '"' + (i === types.length - 1 ? ' disabled' : '') + ' aria-label="下へ">↓</button>' +
-          '<button class="small" data-ed="toggle" data-i="' + i + '">' + (t.show ? '表示しない' : '表示する') + '</button>' +
-          '<button class="small" data-ed="edit" data-i="' + i + '">項目を編集</button></div></div>';
-      }).join('') : '<p class="hint">申請の種類がありません。</p>') +
-      '</div><button data-ed="tadd">＋ 新しい申請の種類</button>' +
-      '<h3>どの申請にも付く項目</h3><div class="sh-box"><div class="sh-pair">' +
-        '<div><label for="shEdDeptLabel">1つ目の項目名</label><input type="text" id="shEdDeptLabel" data-c="dept.label" value="' + esc(deptField().label) + '"></div>' +
-        '<div><label for="shEdDeptPh">入力例</label><input type="text" id="shEdDeptPh" data-c="dept.ph" value="' + esc(deptField().ph || '') + '"></div></div>' +
-        '<label for="shEdJobLabel">2つ目の項目名</label><input type="text" id="shEdJobLabel" data-c="job.label" value="' + esc(jobField().label) + '">' +
-        '<label for="shEdJobOpts">' + esc(jobField().label) + 'の選択肢（1行に1つ）</label><textarea id="shEdJobOpts" data-c="job.opts" rows="6">' + esc(jobField().opts.join('\n')) + '</textarea>' +
-      '</div>' + saveBar();
+  function renderForm() {
+    var e = T.edit, isNew = !e.id;
+    var canAssign = T.me.canAssign && (isNew || (T.open && T.open.canReassign));
+    var assignees = T.users.filter(function (u) { return u.assignable || u.id.toLowerCase() === String(e.assignee).toLowerCase(); });
+    var others = T.users.filter(function (u) { return u.id.toLowerCase() !== T.me.id.toLowerCase(); });
+    var people = others.length ? others.map(function (u) {
+      return '<label><input type="checkbox" data-vu="' + esc(u.id) + '"' + ((e.visUsers || []).map(function (x) { return x.toLowerCase(); }).indexOf(u.id.toLowerCase()) >= 0 ? ' checked' : '') + '> ' + esc(u.name) + '</label>'; }).join('')
+      : '<span class="hint">選べる人がいません</span>';
+    var assign = canAssign
+      ? '<label for="tkAssignee">担当（だれに）</label><select id="tkAssignee">' + assignees.map(function (u) {
+          return '<option value="' + esc(u.id) + '"' + (u.id.toLowerCase() === String(e.assignee).toLowerCase() ? ' selected' : '') + '>' + esc(u.name) +
+            (u.id.toLowerCase() === T.me.id.toLowerCase() ? '（自分）' : '') + '</option>'; }).join('') + '</select>' +
+        '<p class="hint" style="margin:4px 0 0">ほかの人を選ぶと、その人への依頼になります。' + (T.me.isAdmin ? '' : '選べるのは、同じカテゴリの人だけです。') + '</p>'
+      : '';
+    $('tkDialogBody').innerHTML = '<div class="row"><b style="font-size:17px">' + (isNew ? '新しいタスク' : 'タスクを直す') + '</b><span class="spacer"></span><button class="small" data-act="cancel">やめる</button></div>' +
+      '<p class="sh-note" style="margin-top:10px">患者様・利用者様のお名前は書かないでください（必要なときはIDで記入）。</p>' +
+      '<label for="tkTitle">やること<span class="sh-req">必須</span></label><input type="text" id="tkTitle" maxlength="100" value="' + esc(e.title) + '" placeholder="例：備品（トナー）の発注">' +
+      '<label for="tkDetail">くわしく（任意）</label><textarea id="tkDetail" maxlength="2000">' + esc(e.detail) + '</textarea>' +
+      '<div class="sh-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label for="tkDue">期限（任意）</label><input type="date" id="tkDue" value="' + esc(e.due) + '"></div>' +
+      (isNew ? '<div></div>' : '<div><label for="tkStatus">状況</label><select id="tkStatus">' + ['未着手', '進行中', '完了'].map(function (s) {
+        return '<option' + (s === e.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>') + '</div>' +
+      assign +
+      '<label>見せる人</label><div class="tk-radios">' +
+        '<label><input type="radio" name="tkVis" value="self"' + (e.vis !== 'cats' && e.vis !== 'people' ? ' checked' : '') + '> 担当者と頼んだ人だけ</label>' +
+        '<label><input type="radio" name="tkVis" value="cats"' + (e.vis === 'cats' ? ' checked' : '') + '> カテゴリの人にも見せる</label>' +
+        '<div class="tk-cats' + (e.vis === 'cats' ? '' : ' hidden') + '" id="tkVisCats">' + catOptions(e.visCats) + '</div>' +
+        '<label><input type="radio" name="tkVis" value="people"' + (e.vis === 'people' ? ' checked' : '') + '> 名前を選んで見せる</label>' +
+        '<div class="tk-cats' + (e.vis === 'people' ? '' : ' hidden') + '" id="tkVisUsers">' + people + '</div></div>' +
+      '<p class="hint" style="margin:6px 0 0">' + (T.me.seeAll ? '' : '理事長は、どのタスクも見られます。') + '内容を変えられるのは頼んだ人だけです。担当者ができるのは「完了」と連絡だけです。</p>' +
+      '<div class="msg" id="tkMsg"></div>' +
+      '<div class="row" style="margin-top:16px"><span class="spacer"></span><button class="primary" data-act="save">' + (isNew ? '登録する' : '保存する') + '</button></div>';
   }
-  function renderTypeEditor() {
-    var t = edType();
-    var dates = t.fields.filter(function (f) { return f.type === 'date'; });
-    var rangeOpts = function (sel) {
-      return '<option value="">（なし）</option>' + dates.map(function (f) { return '<option value="' + esc(f.k) + '"' + (f.k === sel ? ' selected' : '') + '>' + esc(f.label) + '</option>'; }).join('');
-    };
-    var r = t.range || ['', ''];
-    var catsMode = !!(t.cats && t.cats.length) || S.audOpen === t.id;
-    $('shEd').innerHTML =
-      '<div class="row"><button class="small" data-ed="back">← 一覧に戻る</button><span class="hint">一覧に戻っても変更は残ります。最後に「保存して全員に反映」を押してください。</span></div>' +
-      '<h3>申請の種類</h3><div class="sh-box"><div class="sh-pair">' +
-        '<div><label for="shEdTLabel">名前</label><input type="text" id="shEdTLabel" data-t="label" maxlength="30" value="' + esc(t.label) + '"></div>' +
-        '<div><label for="shEdTCh">一覧に出す一文字</label><input type="text" id="shEdTCh" data-t="ch" maxlength="1" value="' + esc(t.ch) + '"></div></div>' +
-        '<label for="shEdTDesc">説明（選ぶ画面に出る一言）</label><input type="text" id="shEdTDesc" data-t="desc" maxlength="80" value="' + esc(t.desc || '') + '">' +
-        '<div class="sh-checks"><label><input type="checkbox" data-t="show"' + (t.show ? ' checked' : '') + '> 職員の画面に表示する</label></div>' +
-      '</div>' +
-      '<h3>表示する人</h3><div class="sh-box">' +
-        '<div class="sh-checks"><label><input type="radio" name="shAud" data-aud="all"' + (catsMode ? '' : ' checked') + '> 全員</label>' +
-        '<label><input type="radio" name="shAud" data-aud="cats"' + (catsMode ? ' checked' : '') + '> 選んだカテゴリの人だけ</label></div>' +
-        (catsMode
-          ? (S.cats.length ? '<div class="sh-checks" style="margin-top:8px">' + S.cats.map(function (c) {
-              return '<label><input type="checkbox" data-tc="' + esc(c.id) + '"' + ((t.cats || []).indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + '</label>'; }).join('') + '</div>'
-            : '<p class="sh-note" style="margin:8px 0 0">カテゴリがまだありません。</p>') +
-            '<p class="sh-err' + (t.cats && t.cats.length ? ' hidden' : '') + '" id="shAudWarn" style="margin-top:6px">カテゴリを1つ以上選んでください。選ばないまま保存すると全員に表示されます。</p>' +
-            '<p class="hint" style="margin:8px 0 0">カテゴリは上の「管理」→「カテゴリ」で作り、「ユーザー」で職員に付けます（例：「医師」カテゴリを作って医師に付ける）。資料フォルダは設定しなくてもかまいません。管理者（理事長・事務長）には、ここの設定にかかわらず全部表示されます。</p>'
-          : '') +
-      '</div>' +
-      '<h3>項目</h3>' + t.fields.map(function (f, i) {
-        return '<div class="sh-field"><div class="sh-frow"><div><label for="shEdF' + i + 'L">項目名</label><input type="text" id="shEdF' + i + 'L" data-fi="' + i + '" data-p="label" maxlength="40" value="' + esc(f.label) + '"></div>' +
-          '<div><label for="shEdF' + i + 'T">入力の形</label><select id="shEdF' + i + 'T" data-fi="' + i + '" data-p="type">' + Object.keys(KINDS).map(function (k) {
-            return '<option value="' + k + '"' + (k === f.type ? ' selected' : '') + '>' + KINDS[k] + '</option>'; }).join('') + '</select></div></div>' +
-          (CHOICE[f.type] ? '<label for="shEdF' + i + 'O">選択肢（1行に1つ）</label><textarea id="shEdF' + i + 'O" data-fi="' + i + '" data-p="opts" rows="4">' + esc((f.opts || []).join('\n')) + '</textarea>' : '') +
-          (f.type === 'text' || f.type === 'textarea' || f.type === 'number' ? '<label for="shEdF' + i + 'P">入力例（薄い字で出る）</label><input type="text" id="shEdF' + i + 'P" data-fi="' + i + '" data-p="ph" maxlength="80" value="' + esc(f.ph || '') + '">' : '') +
-          '<label for="shEdF' + i + 'N">説明（' + (f.type === 'head' ? '見出しの下' : '入力欄の下') + 'に小さく出る・任意）</label><textarea id="shEdF' + i + 'N" data-fi="' + i + '" data-p="note" rows="2" maxlength="300" style="min-height:0">' + esc(f.note || '') + '</textarea>' +
-          (f.type === 'head' ? '' : condEditor(t, f, i)) +
-          '<div class="sh-checks">' + (f.type === 'head' ? '<span class="hint">見出しは入力欄ではありません。項目のまとまりの上に置きます。</span>'
-            : '<label><input type="checkbox" data-fi="' + i + '" data-p="req"' + (f.req ? ' checked' : '') + '> 必須</label>' +
-          '<label><input type="checkbox" data-fi="' + i + '" data-p="wide"' + (f.wide ? ' checked' : '') + '> 横いっぱいに広げる</label>') +
-          '<span class="spacer"></span><span class="sh-btns">' +
-          '<button class="small" data-ed="fup" data-i="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="上へ">↑</button>' +
-          '<button class="small" data-ed="fdown" data-i="' + i + '"' + (i === t.fields.length - 1 ? ' disabled' : '') + ' aria-label="下へ">↓</button>' +
-          '<button class="small danger" data-ed="fdel" data-i="' + i + '">削除</button></span></div></div>';
-      }).join('') +
-      '<button data-ed="fadd">＋ 項目を追加</button>' +
-      '<h3>期間のチェック（任意）</h3><div class="sh-box"><p class="hint" style="margin:0">日付の項目を2つ選ぶと、日数を自動で表示し、終わりが始まりより前なら止めます。</p><div class="sh-pair">' +
-        '<div><label for="shEdR0">始まりの日付</label><select id="shEdR0" data-r="0">' + rangeOpts(r[0]) + '</select></div>' +
-        '<div><label for="shEdR1">終わりの日付</label><select id="shEdR1" data-r="1">' + rangeOpts(r[1]) + '</select></div></div></div>' +
-      '<div class="row" style="margin-top:16px"><span class="hint">使わないだけなら「職員の画面に表示する」を外せば隠せます。</span><span class="spacer"></span>' +
-      '<button class="small danger" data-ed="tdel">この申請の種類を削除</button></div>' +
-      saveBar();
+  function readForm() {
+    var e = T.edit;
+    e.title = $('tkTitle').value; e.detail = $('tkDetail').value; e.due = $('tkDue').value;
+    if ($('tkStatus')) e.status = $('tkStatus').value;
+    if ($('tkAssignee')) e.assignee = $('tkAssignee').value;
+    var v = document.querySelector('input[name=tkVis]:checked'); e.vis = v ? v.value : 'self';
+    e.visCats = Array.prototype.map.call(document.querySelectorAll('#tkVisCats input:checked'), function (c) { return c.getAttribute('data-vc'); });
+    e.visUsers = Array.prototype.map.call(document.querySelectorAll('#tkVisUsers input:checked'), function (c) { return c.getAttribute('data-vu'); });
+    return e;
   }
-  /** 条件で必須：「○○」が「△△」のとき必須（選択の項目だけを条件にできる） */
-  function condEditor(t, f, i) {
-    var srcs = t.fields.filter(function (x) { return CHOICE[x.type] && x.k !== f.k; });
-    if (!srcs.length) return '';
-    var rk = f.reqIf && f.reqIf.k || '', src = srcs.filter(function (x) { return x.k === rk; })[0];
-    return '<div class="sh-pair"><div><label for="shEdF' + i + 'CK">条件で必須（任意）</label><select id="shEdF' + i + 'CK" data-fi="' + i + '" data-p="reqIfK">' +
-      '<option value="">（なし）</option>' + srcs.map(function (x) {
-        return '<option value="' + esc(x.k) + '"' + (x.k === rk ? ' selected' : '') + '>' + esc(x.label || '（名前なし）') + 'が</option>'; }).join('') + '</select></div>' +
-      '<div><label for="shEdF' + i + 'CV">次の値のとき</label><select id="shEdF' + i + 'CV" data-fi="' + i + '" data-p="reqIfV"' + (src ? '' : ' disabled') + '>' +
-      (src ? (src.opts || []).filter(String).map(function (o) { return '<option' + (o === f.reqIf.v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') : '<option value="">—</option>') +
-      '</select></div></div>';
-  }
-  function catNames(ids) {
-    return (ids || []).map(function (id) { var c = S.cats.filter(function (x) { return x.id === id; })[0]; return c ? c.name : id; }).join('・');
-  }
-  function move(arr, i, d) { var j = i + d; if (j < 0 || j >= arr.length) return; var x = arr[i]; arr[i] = arr[j]; arr[j] = x; }
-
-  // 入力欄の変更（文字・チェック・選択）
-  $('shEd').addEventListener('input', function (e) { edInput(e.target, false); });
-  $('shEd').addEventListener('change', function (e) { edInput(e.target, true); });
-  function edInput(el, isChange) {
-    if (!S.forms) return;
-    var c = el.getAttribute('data-c'), tp = el.getAttribute('data-t'), fi = el.getAttribute('data-fi'), rr = el.getAttribute('data-r');
-    if (c) {
-      var parts = c.split('.'), f = parts[0] === 'job' ? jobField() : deptField();
-      f[parts[1]] = parts[1] === 'opts' ? el.value.split('\n') : el.value;
-      dirty(); return;
-    }
-    var t = edType(); if (!t) return;
-    var aud = el.getAttribute('data-aud'), tc = el.getAttribute('data-tc');
-    if (aud && isChange) {
-      if (aud === 'all') { t.cats = []; S.audOpen = null; } else { S.audOpen = t.id; }
-      dirty(); renderTypeEditor(); return;
-    }
-    if (tc && isChange) {
-      var cs = (t.cats || []).filter(function (x) { return x !== tc; });
-      if (el.checked) cs.push(tc);
-      t.cats = cs; dirty();
-      if ($('shAudWarn')) $('shAudWarn').classList.toggle('hidden', cs.length > 0);
+  $('tkDialog').addEventListener('change', function (e) {
+    if (!T.edit) return;
+    if (e.target.name === 'tkVis') {
+      $('tkVisCats').classList.toggle('hidden', e.target.value !== 'cats');
+      $('tkVisUsers').classList.toggle('hidden', e.target.value !== 'people');
       return;
     }
-    if (aud || tc) return;
-    if (tp) { t[tp] = el.type === 'checkbox' ? el.checked : el.value; dirty(); return; }
-    if (rr !== null) { var rg = t.range ? t.range.slice() : ['', '']; rg[+rr] = el.value; t.range = rg[0] || rg[1] ? rg : null; dirty(); return; }
-    if (fi !== null) {
-      var fld = t.fields[+fi], p = el.getAttribute('data-p');
-      if (el.type === 'checkbox') fld[p] = el.checked;
-      else if (p === 'opts') fld.opts = el.value.split('\n');
-      else if (p === 'reqIfK') {
-        var sf = t.fields.filter(function (x) { return x.k === el.value; })[0];
-        fld.reqIf = sf ? { k: sf.k, v: ((sf.opts || []).filter(String)[0] || '') } : null;
+    if (e.target.id === 'tkAssignee' && !T.edit.id) {
+      // 担当を選んだら、その人の「いつもの公開先」に合わせる
+      readForm();
+      var u = T.users.filter(function (x) { return x.id === e.target.value; })[0];
+      if (u) {
+        var allowed = T.cats.map(function (c) { return c.id; });
+        T.edit.vis = u.defaultVis === 'cats' ? 'cats' : 'self';
+        T.edit.visCats = (u.defaultCats || []).filter(function (c) { return allowed.indexOf(c) >= 0; });
+        if (T.edit.vis === 'cats' && !T.edit.visCats.length) T.edit.vis = 'self';
       }
-      else if (p === 'reqIfV') { if (fld.reqIf) fld.reqIf.v = el.value; }
-      else fld[p] = el.value;
-      dirty();
-      if (p === 'reqIfK' && isChange) renderTypeEditor();
-      if (p === 'type' && isChange) {
-        if (CHOICE[fld.type] && !(fld.opts && fld.opts.filter(String).length)) fld.opts = ['選択肢1', '選択肢2'];
-        if (t.range && t.range.indexOf(fld.k) >= 0 && fld.type !== 'date') t.range = null;
-        if (fld.type === 'head') { fld.req = false; fld.reqIf = null; }
-        // 選択でなくなった項目を条件にしていた項目は、条件を外す
-        if (!CHOICE[fld.type]) t.fields.forEach(function (x) { if (x.reqIf && x.reqIf.k === fld.k) x.reqIf = null; });
-        renderTypeEditor();
-      }
-      // 選択肢を変えたら、条件の値の一覧を作り直す（入力中は打ち直さない）
-      if (p === 'opts' && isChange && t.fields.some(function (x) { return x.reqIf && x.reqIf.k === fld.k; })) renderTypeEditor();
-    }
-  }
-  // ボタン
-  $('shEd').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-ed]');
-    if (!b || !S.forms) return;
-    var a = b.getAttribute('data-ed'), i = +b.getAttribute('data-i'), types = S.forms.types, t = edType();
-    switch (a) {
-      case 'tup': move(types, i, -1); dirty(); renderEditor(); break;
-      case 'tdown': move(types, i, 1); dirty(); renderEditor(); break;
-      case 'toggle': types[i].show = !types[i].show; dirty(); renderEditor(); break;
-      case 'edit': S.editId = types[i].id; renderEditor(); window.scrollTo(0, 0); break;
-      case 'tdel':
-        confirmBox('申請の種類を削除', '「' + t.label + '」を様式から削除します（「保存して全員に反映」を押すまでは確定しません）。提出済みの申請は残ります。', function () {
-          S.forms.types = types.filter(function (x) { return x !== t; }); S.editId = null; dirty(); renderEditor(); window.scrollTo(0, 0);
-        });
-        break;
-      case 'tadd':
-        var nt = { id: newKey('t'), label: '新しい申請', ch: '新', desc: '', show: false, range: null,
-          fields: [{ k: newKey('f'), label: '件名', type: 'text', req: true, wide: true, ph: '' }] };
-        types.push(nt); S.editId = nt.id; dirty(); renderEditor(); window.scrollTo(0, 0);
-        break;
-      case 'back': S.editId = null; renderEditor(); window.scrollTo(0, 0); break;
-      case 'fup': move(t.fields, i, -1); dirty(); renderTypeEditor(); break;
-      case 'fdown': move(t.fields, i, 1); dirty(); renderTypeEditor(); break;
-      case 'fdel':
-        var fk = t.fields[i].k;
-        t.fields.splice(i, 1);
-        t.fields.forEach(function (x) { if (x.reqIf && x.reqIf.k === fk) x.reqIf = null; });
-        if (t.range && t.range.indexOf(fk) >= 0) t.range = null;
-        dirty(); renderTypeEditor();
-        break;
-      case 'fadd': t.fields.push({ k: newKey('f'), label: '', type: 'text', req: false, wide: false, ph: '' }); dirty(); renderTypeEditor();
-        var last = document.querySelectorAll('#shEd .sh-field input[data-p="label"]'); if (last.length) last[last.length - 1].focus();
-        break;
-      case 'revert':
-        confirmBox('変更を取り消す', '保存していない変更をすべて取り消して、保存済みの様式に戻します。', function () { loadForms(); });
-        break;
-      case 'save':
-        b.disabled = true; b.textContent = '保存中…';
-        run('apiShinseiSaveForms', [state.token, S.forms], function (res) {
-          S.forms = res.forms; S.cats = res.categories || S.cats; S.formsDirty = false;
-          if (S.editId && !edType()) S.editId = null;
-          renderTabs(); renderEditor();
-          setMsg('shFormsMsg', '保存しました。職員が申請画面を開き直すと反映されます。', 'info');
-          load(true);
-        }, function (m) {
-          b.disabled = false; b.textContent = '保存して全員に反映';
-          setMsg('shFormsMsg', m);
-        });
-        break;
+      renderForm();
     }
   });
+  $('tkDialog').addEventListener('click', function (ev) {
+    if (ev.target.id === 'tkDialog') { closeTk(); return; }
+    var st = ev.target.closest('[data-st]');
+    if (st && T.open) {
+      call('apiTaskStatus', [state.token, T.open.id, st.getAttribute('data-st')], function () { reopen(); }, 'tkMsg');
+      return;
+    }
+    var b = ev.target.closest('[data-act]'); if (!b) return;
+    var a = b.getAttribute('data-act');
+    if (a === 'close') closeTk();
+    if (a === 'cancel') { if (T.open) { T.edit = null; renderDialog(); } else closeTk(); }
+    if (a === 'edit') {
+      var t = T.open;
+      T.edit = { id: t.id, title: t.title, detail: t.detail, due: t.due, status: t.status, assignee: t.assignee, vis: t.vis, visCats: t.visCats.slice(), visUsers: (t.visUsers || []).slice() };
+      renderForm();
+    }
+    if (a === 'save') {
+      var e = readForm();
+      if (!e.title.trim()) { setMsg('tkMsg', 'やることを入れてください'); $('tkTitle').focus(); return; }
+      if (e.vis === 'cats' && !e.visCats.length) { setMsg('tkMsg', '見せるカテゴリを1つ以上選んでください'); return; }
+      if (e.vis === 'people' && !e.visUsers.length) { setMsg('tkMsg', '見せる人を1人以上選んでください'); return; }
+      b.disabled = true;
+      call('apiTaskSave', [state.token, e], function (res) {
+        if (T.open) { reopen(); } else { closeTk(); load(); }
+      }, 'tkMsg');
+      setTimeout(function () { b.disabled = false; }, 1500);
+    }
+    if (a === 'note') {
+      var txt = $('tkNoteText').value.trim();
+      if (!txt) { setMsg('tkMsg', '連絡の内容を入れてください'); return; }
+      call('apiTaskNote', [state.token, T.open.id, txt], function () { reopen(); }, 'tkMsg');
+    }
+    if (a === 'del') {
+      var tt = T.open;
+      confirmBox('タスクを削除', '「' + tt.title + '」を削除します。連絡も消え、元に戻せません。', function () {
+        call('apiTaskDelete', [state.token, tt.id], function () { closeTk(); load(); });
+      });
+    }
+  });
+  function reopen() { if (T.open) openTask(T.open.id); }
+
+  // ---- 管理画面のユーザー編集に「タスク表の設定」を足す（管理者用） ----
+  (function () {
+    var msg = $('userMsg');
+    var box = document.createElement('div');
+    box.id = 'uTaskBox';
+    box.innerHTML = '<label>タスク表</label><div class="checks"><label><input type="checkbox" id="uSeeAll"> 全員のタスクを見られる（理事長など）</label>' +
+      '<label><input type="checkbox" id="uCanAssign"> タスクを依頼できる（同じカテゴリの人に。上長など）</label></div>' +
+      '<label for="uMm">Mattermost のユーザー名（@ は付けない・任意）</label><input type="text" id="uMm" autocapitalize="off" placeholder="例：kasuga">' +
+      '<label for="uTaskVis">この人のタスクの、いつもの公開先</label><select id="uTaskVis" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit">' +
+      '<option value="self">担当者と頼んだ人だけ</option><option value="cats">カテゴリの人にも見せる</option></select>' +
+      '<div class="checks hidden" id="uTaskCats"></div><p class="hint" style="margin:4px 0 0">新しいタスクを登録するときの初期値です（例：事務長のタスクは事務部門の人に見せる）。タスクごとに変えられます。</p>';
+    msg.parentNode.insertBefore(box, msg);
+    $('uTaskVis').addEventListener('change', function () { $('uTaskCats').classList.toggle('hidden', this.value !== 'cats'); });
+  })();
+  var prevOpenUser = window.openUserDialog;
+  window.openUserDialog = function (u) {
+    prevOpenUser(u);
+    $('uSeeAll').checked = !!(u && u.seeAllTasks);
+    $('uCanAssign').checked = !!(u && u.canAssignTasks);
+    $('uMm').value = (u && u.mmUsername) || '';
+    $('uTaskVis').value = (u && u.taskVis === 'cats') ? 'cats' : 'self';
+    var sel = (u && u.taskVisCats) || [];
+    $('uTaskCats').innerHTML = state.cats.map(function (c) {
+      return '<label><input type="checkbox" value="' + esc(c.id) + '"' + (sel.indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.name) + '</label>'; }).join('') || '<span class="hint">カテゴリがありません</span>';
+    $('uTaskCats').classList.toggle('hidden', $('uTaskVis').value !== 'cats');
+  };
+  window.saveUser = function () {
+    var u = state.editingUser;
+    var data = {
+      id: $('uId').value.trim(),
+      name: $('uName').value.trim(),
+      role: document.querySelector('input[name=uRole]:checked').value,
+      cats: Array.prototype.map.call(document.querySelectorAll('#uCats input:checked'), function (c) { return c.value; }),
+      seeAllTasks: $('uSeeAll').checked,
+      canAssignTasks: $('uCanAssign').checked,
+      mmUsername: $('uMm').value.trim(),
+      taskVis: $('uTaskVis').value,
+      taskVisCats: Array.prototype.map.call(document.querySelectorAll('#uTaskCats input:checked'), function (c) { return c.value; })
+    };
+    call('apiSaveUser', [state.token, data, !u], function (res) {
+      closeDialog('userDialog');
+      if (res.tempPassword) showTempPw(data, res.tempPassword);
+      loadAdmin();
+    }, 'userMsg');
+  };
+  // ユーザー一覧に「全タスク閲覧」の目印
+  var prevRenderUsers = window.renderUsers;
+  window.renderUsers = function () {
+    prevRenderUsers();
+    var rows = document.querySelectorAll('#userRows tr');
+    var list = state.users.filter(function (u) { var q = $('userFilter').value.trim().toLowerCase(); return !q || u.id.toLowerCase().indexOf(q) >= 0 || u.name.toLowerCase().indexOf(q) >= 0; });
+    list.forEach(function (u, i) {
+      if (!rows[i] || !rows[i].children[1]) return;
+      if (u.seeAllTasks) rows[i].children[1].insertAdjacentHTML('beforeend', ' <span class="tag admin">全タスク閲覧</span>');
+      if (u.canAssignTasks && u.role !== ROLE_ADMIN) rows[i].children[1].insertAdjacentHTML('beforeend', ' <span class="tag">依頼できる</span>');
+    });
+  };
 })();
 </script>
 
@@ -2094,14 +1621,14 @@
   })();
 </script>
 
-<!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が shinsei と 【試し用】真成会 申請・届出 を入れる） -->
+<!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が tasks と 真成会 タスク を入れる） -->
 <style>
   #loginTitle .lt-org { display: block; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .2em; margin-bottom: 10px; }
   #loginTitle .lt-app { display: block; font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
 </style>
 <script>
   (function () {
-    var APP = 'shinsei', TITLE = '【試し用】真成会 申請・届出', NAME = '申請・届出';
+    var APP = 'tasks', TITLE = '真成会 タスク', NAME = 'タスク';
     document.title = TITLE;
     $('appTitle').textContent = TITLE;
     // ログインの見出し：「真成会」を小さく上に、「〇〇ログイン」を大きく（2026-11-13 A案）
@@ -2118,95 +1645,6 @@
     };
     var homeBtn = document.querySelector('#appHeader .row button');
     if (homeBtn && homeBtn.textContent.trim() === 'ホーム') homeBtn.classList.add('hidden');
-  })();
-</script>
-
-<!-- 試し用の画面だけに入れる（build.py が dist-test/ にだけ入れる。本番の dist/ には入らない）2026-11-19
-     役割ボタンで、ID・パスワードを入れずにその人として入る。中身は test_seed.sql で作った試し用の人の ID とパスワードを入れて「ログイン」を押すだけ。
-     本番のデータベースにはこの人たちはいないので、このボタンが本番に紛れても入れない -->
-<style>
-  #testBanner { position: sticky; top: 0; z-index: 50; background: #b42318; color: #fff; text-align: center; font-weight: 700; font-size: 13px; padding: 6px 8px; letter-spacing: .05em; }
-  #testRoles { position: fixed; right: 12px; bottom: 12px; z-index: 60; background: #fff; border: 2px solid #b42318; border-radius: 12px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15); max-width: calc(100vw - 24px); }
-  #testRoles .tr-head { font-size: 12px; font-weight: 700; color: #b42318; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
-  #testRoles .tr-head button { border: 0; background: none; color: #b42318; cursor: pointer; font-size: 12px; padding: 0; }
-  #testRoles .tr-btns { display: flex; flex-wrap: wrap; gap: 6px; }
-  #testRoles .tr-btns button { border: 1px solid #d0d5dd; background: #f9fafb; border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
-  #testRoles .tr-btns button.on { background: #b42318; border-color: #b42318; color: #fff; }
-  #testRoles.closed .tr-btns { display: none; }
-  #testRoles.atLogin { display: none; }
-  body.has-test-roles { padding-bottom: 90px; }
-  @media (max-width: 600px) {
-    #testRoles { left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; }
-    #testRoles .tr-btns button { padding: 5px 8px; font-size: 12px; }
-  }
-  #testRoleLogin { margin-top: 16px; padding-top: 14px; border-top: 1px dashed #d0d5dd; }
-  #testRoleLogin p { margin: 0 0 8px; font-size: 13px; color: #b42318; font-weight: 700; }
-  #testRoleLogin .tr-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  #testRoleLogin button { display: block; width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #d0d5dd; background: #fff; cursor: pointer; font-size: 14px; text-align: left; }
-  #testRoleLogin button small { display: block; color: #667085; font-size: 11px; margin-top: 2px; }
-</style>
-<script>
-  (function () {
-    var ROLES = [{"id": "rijicho", "label": "理事長", "note": "管理者・全部見える"}, {"id": "jimucho", "label": "事務長", "note": "管理者・承認する"}, {"id": "kasuga", "label": "一般職員", "note": "一般・依頼される側"}, {"id": "kango", "label": "看護の職員", "note": "一般・申請を出す側"}, {"id": "ishi", "label": "医師", "note": "一般・医師休暇申請が出せる"}];
-    var PW = "test1234";
-    var current = '';
-
-    var banner = document.createElement('div');
-    banner.id = 'testBanner';
-    banner.textContent = '試し用の画面です（本番とは別のデータ。ここで何をしても本番には影響しません）';
-    document.body.insertBefore(banner, document.body.firstChild);
-
-    function enter(id) {
-      current = id;
-      mark();
-      if (state.token) logout();          // 入っていれば一度出てから
-      $('loginId').value = id;
-      $('loginPw').value = PW;
-      var form = document.querySelector('#view-login form');
-      if (form.requestSubmit) form.requestSubmit(); else login({ preventDefault: function () {} });
-    }
-    function mark() {
-      document.querySelectorAll('#testRoles .tr-btns button').forEach(function (b) { b.classList.toggle('on', b.dataset.id === current); });
-    }
-
-    // ログイン画面のボタン
-    var box = document.createElement('div');
-    box.id = 'testRoleLogin';
-    box.innerHTML = '<p>試し用：ボタンで、その役割として入れます</p><div class="tr-btns"></div>';
-    ROLES.forEach(function (r) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = r.label;
-      var s = document.createElement('small'); s.textContent = r.note; b.appendChild(s);
-      b.onclick = function () { enter(r.id); };
-      box.querySelector('.tr-btns').appendChild(b);
-    });
-    $('view-login').appendChild(box);
-
-    // どの画面からでも切り替えられる小さな枠（右下）
-    var panel = document.createElement('div');
-    panel.id = 'testRoles';
-    panel.innerHTML = '<div class="tr-head"><span>試し用：役割を切り替える</span><button type="button">たたむ</button></div><div class="tr-btns"></div>';
-    ROLES.forEach(function (r) {
-      var b = document.createElement('button');
-      b.type = 'button'; b.dataset.id = r.id; b.textContent = r.label; b.title = r.note;
-      b.onclick = function () { enter(r.id); };
-      panel.querySelector('.tr-btns').appendChild(b);
-    });
-    var tog = panel.querySelector('.tr-head button');
-    tog.onclick = function () { panel.classList.toggle('closed'); tog.textContent = panel.classList.contains('closed') ? 'ひらく' : 'たたむ'; };
-    document.body.appendChild(panel);
-    document.body.classList.add('has-test-roles');
-    // ログイン画面ではボタンがあるので、右下の枠は出さない。スマホでは最初はたたんでおく
-    var loginView = $('view-login');
-    var sync = function () { panel.classList.toggle('atLogin', !loginView.classList.contains('hidden')); };
-    new MutationObserver(sync).observe(loginView, { attributes: true, attributeFilter: ['class'] });
-    sync();
-    if (window.innerWidth <= 600) { panel.classList.add('closed'); tog.textContent = 'ひらく'; }
-
-    // ID とパスワードで入ったときも、どの役割かを印で示す
-    var prevSetMe = window.setMe;
-    window.setMe = function (me) { prevSetMe(me); current = me.id; mark(); };
   })();
 </script>
 
