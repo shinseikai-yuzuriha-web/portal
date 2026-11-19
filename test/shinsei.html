@@ -5,8 +5,8 @@
 <title>真成会ポータル</title>
 <script>
   // ===== ここに Supabase の2つを貼る（Project Settings → API） ===================
-  var SUPABASE_URL = "https://lzkeaetpykhdrwwwspjy.supabase.co";          // Project URL
-  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6a2VhZXRweWtoZHJ3d3dzcGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNDM3MTgsImV4cCI6MjEwOTgxOTcxOH0.w_iThhR7s9ZF2R_Co3OIedwdQcsFGSb7WqX4TTTE0uM";      // anon public（または Publishable）キー
+  var SUPABASE_URL = 'https://xxxxxxxx.supabase.co';          // Project URL
+  var SUPABASE_ANON_KEY = 'ここに anon public キーを貼る';      // anon public（または Publishable）キー
   // ※ service_role（Secret）キーは絶対に貼らないこと
   // ============================================================================
 
@@ -1159,7 +1159,8 @@
 
   showView('login');
 </script>
-<!-- 申請・承認の画面。index.html の最後の </script> と </body> の間で <?!= include_('shinsei') ?> により読み込まれます -->
+</body>
+</html><!-- 申請・承認の画面。index.html の最後の </script> と </body> の間で <?!= include_('shinsei') ?> により読み込まれます -->
 <style>
   #view-shinsei { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
   #view-shinsei .sh-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
@@ -2003,14 +2004,14 @@
   })();
 </script>
 
-<!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が shinsei と 真成会 申請・届出 を入れる） -->
+<!-- 申請だけ／タスクだけのシステムにする切り替え（build.py が shinsei と 【試し用】真成会 申請・届出 を入れる） -->
 <style>
   #loginTitle .lt-org { display: block; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .2em; margin-bottom: 10px; }
   #loginTitle .lt-app { display: block; font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
 </style>
 <script>
   (function () {
-    var APP = 'shinsei', TITLE = '真成会 申請・届出', NAME = '申請・届出';
+    var APP = 'shinsei', TITLE = '【試し用】真成会 申請・届出', NAME = '申請・届出';
     document.title = TITLE;
     $('appTitle').textContent = TITLE;
     // ログインの見出し：「真成会」を小さく上に、「〇〇ログイン」を大きく（2026-11-13 A案）
@@ -2030,5 +2031,92 @@
   })();
 </script>
 
-</body>
-</html>
+<!-- 試し用の画面だけに入れる（build.py が dist-test/ にだけ入れる。本番の dist/ には入らない）2026-11-19
+     役割ボタンで、ID・パスワードを入れずにその人として入る。中身は test_seed.sql で作った試し用の人の ID とパスワードを入れて「ログイン」を押すだけ。
+     本番のデータベースにはこの人たちはいないので、このボタンが本番に紛れても入れない -->
+<style>
+  #testBanner { position: sticky; top: 0; z-index: 50; background: #b42318; color: #fff; text-align: center; font-weight: 700; font-size: 13px; padding: 6px 8px; letter-spacing: .05em; }
+  #testRoles { position: fixed; right: 12px; bottom: 12px; z-index: 60; background: #fff; border: 2px solid #b42318; border-radius: 12px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15); max-width: calc(100vw - 24px); }
+  #testRoles .tr-head { font-size: 12px; font-weight: 700; color: #b42318; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
+  #testRoles .tr-head button { border: 0; background: none; color: #b42318; cursor: pointer; font-size: 12px; padding: 0; }
+  #testRoles .tr-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  #testRoles .tr-btns button { border: 1px solid #d0d5dd; background: #f9fafb; border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  #testRoles .tr-btns button.on { background: #b42318; border-color: #b42318; color: #fff; }
+  #testRoles.closed .tr-btns { display: none; }
+  #testRoles.atLogin { display: none; }
+  body.has-test-roles { padding-bottom: 90px; }
+  @media (max-width: 600px) {
+    #testRoles { left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; }
+    #testRoles .tr-btns button { padding: 5px 8px; font-size: 12px; }
+  }
+  #testRoleLogin { margin-top: 16px; padding-top: 14px; border-top: 1px dashed #d0d5dd; }
+  #testRoleLogin p { margin: 0 0 8px; font-size: 13px; color: #b42318; font-weight: 700; }
+  #testRoleLogin .tr-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #testRoleLogin button { display: block; width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #d0d5dd; background: #fff; cursor: pointer; font-size: 14px; text-align: left; }
+  #testRoleLogin button small { display: block; color: #667085; font-size: 11px; margin-top: 2px; }
+</style>
+<script>
+  (function () {
+    var ROLES = [{"id": "rijicho", "label": "理事長", "note": "管理者・全部見える"}, {"id": "jimucho", "label": "事務長", "note": "管理者・承認する"}, {"id": "kasuga", "label": "春日（事務）", "note": "一般・依頼される側"}, {"id": "kango", "label": "看護の職員", "note": "一般・申請を出す側"}, {"id": "ishi", "label": "医師", "note": "一般・医師休暇申請が出せる"}];
+    var PW = "test1234";
+    var current = '';
+
+    var banner = document.createElement('div');
+    banner.id = 'testBanner';
+    banner.textContent = '試し用の画面です（本番とは別のデータ。ここで何をしても本番には影響しません）';
+    document.body.insertBefore(banner, document.body.firstChild);
+
+    function enter(id) {
+      current = id;
+      mark();
+      if (state.token) logout();          // 入っていれば一度出てから
+      $('loginId').value = id;
+      $('loginPw').value = PW;
+      var form = document.querySelector('#view-login form');
+      if (form.requestSubmit) form.requestSubmit(); else login({ preventDefault: function () {} });
+    }
+    function mark() {
+      document.querySelectorAll('#testRoles .tr-btns button').forEach(function (b) { b.classList.toggle('on', b.dataset.id === current); });
+    }
+
+    // ログイン画面のボタン
+    var box = document.createElement('div');
+    box.id = 'testRoleLogin';
+    box.innerHTML = '<p>試し用：ボタンで、その役割として入れます</p><div class="tr-btns"></div>';
+    ROLES.forEach(function (r) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = r.label;
+      var s = document.createElement('small'); s.textContent = r.note; b.appendChild(s);
+      b.onclick = function () { enter(r.id); };
+      box.querySelector('.tr-btns').appendChild(b);
+    });
+    $('view-login').appendChild(box);
+
+    // どの画面からでも切り替えられる小さな枠（右下）
+    var panel = document.createElement('div');
+    panel.id = 'testRoles';
+    panel.innerHTML = '<div class="tr-head"><span>試し用：役割を切り替える</span><button type="button">たたむ</button></div><div class="tr-btns"></div>';
+    ROLES.forEach(function (r) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.dataset.id = r.id; b.textContent = r.label; b.title = r.note;
+      b.onclick = function () { enter(r.id); };
+      panel.querySelector('.tr-btns').appendChild(b);
+    });
+    var tog = panel.querySelector('.tr-head button');
+    tog.onclick = function () { panel.classList.toggle('closed'); tog.textContent = panel.classList.contains('closed') ? 'ひらく' : 'たたむ'; };
+    document.body.appendChild(panel);
+    document.body.classList.add('has-test-roles');
+    // ログイン画面ではボタンがあるので、右下の枠は出さない。スマホでは最初はたたんでおく
+    var loginView = $('view-login');
+    var sync = function () { panel.classList.toggle('atLogin', !loginView.classList.contains('hidden')); };
+    new MutationObserver(sync).observe(loginView, { attributes: true, attributeFilter: ['class'] });
+    sync();
+    if (window.innerWidth <= 600) { panel.classList.add('closed'); tog.textContent = 'ひらく'; }
+
+    // ID とパスワードで入ったときも、どの役割かを印で示す
+    var prevSetMe = window.setMe;
+    window.setMe = function (me) { prevSetMe(me); current = me.id; mark(); };
+  })();
+</script>
+
