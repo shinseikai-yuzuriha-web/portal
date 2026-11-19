@@ -1181,12 +1181,21 @@
   .sh-form .sh-sect:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
   .sh-form label { color: var(--text); font-weight: bold; }
   .sh-req { font-size: 11px; color: var(--danger); border: 1px solid var(--danger); border-radius: 4px; padding: 0 4px; margin-left: 6px; font-weight: normal; }
-  #view-shinsei select, #view-shinsei textarea, #view-shinsei input[type=date], #view-shinsei input[type=number], #view-shinsei input[type=search],
+  #view-shinsei select, #view-shinsei textarea, #view-shinsei input[type=date], #view-shinsei input[type=time], #view-shinsei input[type=number], #view-shinsei input[type=search],
   #view-shinsei .sh-ed input[type=text], #shDialog textarea {
     width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 16px; background: var(--card); color: var(--text); }
   #view-shinsei textarea, #shDialog textarea { min-height: 90px; resize: vertical; }
   .sh-bad input, .sh-bad select, .sh-bad textarea { border-color: var(--danger) !important; }
   .sh-err { color: var(--danger); font-size: 12px; margin: 2px 0 0; }
+  /* 選択（ボタン）・複数選択・説明（2026-11-19） */
+  .sh-form .sh-radios { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 8px 0 2px; }
+  .sh-form .sh-radios label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: normal; cursor: pointer; }
+  .sh-form .sh-radios input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); flex: none; }
+  .sh-bad .sh-radios { outline: 1px solid var(--danger); outline-offset: 2px; border-radius: 4px; }
+  .sh-help { color: var(--muted); font-size: 12px; margin: 4px 0 0; white-space: pre-line; }
+  .sh-cond { color: var(--muted); font-size: 11px; font-weight: normal; margin-left: 6px; }
+  .sh-form .sh-sect .sh-help { font-weight: normal; letter-spacing: 0; }
+  .sh-rows dt.sh-rh { grid-column: 1 / -1; color: var(--text); font-weight: bold; font-size: 13px; padding-top: 14px; }
   .sh-calc { color: var(--primary); font-size: 13px; margin-top: 8px; }
   .sh-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 20px; }
   .sh-rows { display: grid; grid-template-columns: 9em 1fr; margin: 0; }
@@ -1315,7 +1324,9 @@
 (function () {
   var STATUS_CLASS = { '承認待ち': 'pending', '承認': 'approved', '差し戻し': 'returned', '却下': 'rejected' };
   var STAMP = { '承認': '承認', '差し戻し': '差戻', '却下': '却下' };
-  var KINDS = { text: '短い文', textarea: '長い文', select: '選択', date: '日付', number: '数字' };
+  var KINDS = { text: '短い文', textarea: '長い文', select: '選択（一覧から）', radio: '選択（ボタン）', checks: '複数選択',
+    date: '日付', time: '時刻', number: '数字', head: '見出し' };
+  var CHOICE = { select: 1, radio: 1, checks: 1 };
   var FIXED = { dept: 1, job: 1 };
   var WD = '日月火水木金土';
   var S = null;
@@ -1468,12 +1479,23 @@
   function showVal(f, v) {
     if (v === '' || v == null) return '—';
     if (f.type === 'date') return fmtDate(v);
-    if (f.type === 'number') return Number(v).toLocaleString('ja-JP') + ' 円';
+    if (f.type === 'number') return Number(v).toLocaleString('ja-JP') + (yen(f) ? ' 円' : '');
+    if (f.type === 'checks') return String(v).split('\n').join('、');
     return v;
   }
+  /** 数字の項目は、項目名に「円」があるときだけ円で表示（年齢・点数などは円を付けない） */
+  function yen(f) { return /円/.test(f.label || ''); }
   function rowsHTML(defs, vals, range) {
     vals = vals || {};
-    var h = defs.map(function (f) { return '<dt>' + esc(f.label) + '</dt><dd>' + esc(showVal(f, vals[f.k])) + '</dd>'; }).join('');
+    // 空の項目は出さない（項目の多い報告書を読みやすく）。見出しは、その下に書いた項目があるときだけ出す
+    var h = '', head = null;
+    defs.forEach(function (f) {
+      if (f.type === 'head') { head = f; return; }
+      var v = vals[f.k];
+      if ((v === '' || v == null) && !f.req && !FIXED[f.k]) return;
+      if (head) { h += '<dt class="sh-rh">' + esc(head.label) + '</dt>'; head = null; }
+      h += '<dt>' + esc(f.label) + '</dt><dd>' + esc(showVal(f, v)) + '</dd>';
+    });
     if (range) { var n = dayCount(vals[range[0]], vals[range[1]]); if (n) h += '<dt>日数</dt><dd>' + n + '日間</dd>'; }
     return h;
   }
@@ -1494,8 +1516,8 @@
     }).join('');
     var url = S.cfg.hiyariUrl;
     html += url
-      ? '<a class="cat link sh-hiyari" style="display:flex;gap:12px;text-decoration:none;color:inherit" target="_blank" rel="noopener" id="shHiyari" href="#"><span class="sh-kanji">ヒ</span><span><b>ヒヤリハット・事故報告</b><span class="hint">報告用のシステムが別の画面で開きます</span></span></a>'
-      : '<div class="cat sh-hiyari" style="display:flex;gap:12px"><span class="sh-kanji">ヒ</span><span><b>ヒヤリハット・事故報告</b><span class="hint">報告先を準備中です。これまでどおり報告用紙に記入してください。</span></span></div>';
+      ? '<a class="cat link sh-hiyari" style="display:flex;gap:12px;text-decoration:none;color:inherit" target="_blank" rel="noopener" id="shHiyari" href="#"><span class="sh-kanji">イ</span><span><b>インシデント・アクシデント報告書</b><span class="hint">ヒヤリハット・事故の報告。報告用のシステムが別の画面で開きます</span></span></a>'
+      : '<div class="cat sh-hiyari" style="display:flex;gap:12px"><span class="sh-kanji">イ</span><span><b>インシデント・アクシデント報告書</b><span class="hint">報告先を準備中です。これまでどおり報告用紙に記入してください。</span></span></div>';
     $('shTypes').innerHTML = (types.length ? '' : '<p class="hint" style="grid-column:1/-1">いま受け付けている申請はありません。</p>') + html;
   }
   function hiyariHref() {
@@ -1512,16 +1534,42 @@
     if (b) openForm(b.getAttribute('data-type'));
   });
 
-  function fieldHTML(f, v) {
+  function fieldHTML(f, v, all) {
     var id = 'sh-f-' + f.k, ctl;
     v = v == null ? '' : v;
+    var help = f.note ? '<p class="sh-help">' + esc(f.note) + '</p>' : '';
+    if (f.type === 'head') return '<div class="sh-sect">' + esc(f.label) + help + '</div>';
+    if (f.type === 'radio' || f.type === 'checks') {
+      var chosen = f.type === 'checks' ? String(v).split('\n') : [v];
+      ctl = '<div class="sh-radios" id="' + id + '" role="' + (f.type === 'radio' ? 'radiogroup' : 'group') + '" aria-label="' + esc(f.label) + '">' +
+        f.opts.map(function (o, i) {
+          return '<label><input type="' + (f.type === 'radio' ? 'radio' : 'checkbox') + '" name="' + id + '" value="' + esc(o) + '"' +
+            (chosen.indexOf(o) >= 0 ? ' checked' : '') + '> ' + esc(o) + '</label>';
+        }).join('') + '</div>';
+      return '<div class="' + (f.wide ? 'sh-wide' : '') + '" data-f="' + esc(f.k) + '"><label>' + esc(f.label) +
+        (f.req ? '<span class="sh-req">必須</span>' : '') + condHTML(f, all) + '</label>' + ctl + help + '<p class="sh-err hidden"></p></div>';
+    }
     if (f.type === 'textarea') ctl = '<textarea id="' + id + '" placeholder="' + esc(f.ph || '') + '">' + esc(v) + '</textarea>';
     else if (f.type === 'select') ctl = '<select id="' + id + '"><option value="">選択してください</option>' + f.opts.map(function (o) {
       return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>';
-    else ctl = '<input id="' + id + '" type="' + (f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text') + '" value="' + esc(v) +
+    else ctl = '<input id="' + id + '" type="' + (f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : f.type === 'number' ? 'number' : 'text') + '" value="' + esc(v) +
       '" placeholder="' + esc(f.ph || '') + '"' + (f.type === 'number' ? ' inputmode="numeric" min="0" step="1"' : '') + '>';
     return '<div class="' + (f.wide || f.type === 'textarea' ? 'sh-wide' : '') + '" data-f="' + esc(f.k) + '"><label for="' + id + '">' + esc(f.label) +
-      (f.req ? '<span class="sh-req">必須</span>' : '') + '</label>' + ctl + '<p class="sh-err hidden"></p></div>';
+      (f.req ? '<span class="sh-req">必須</span>' : '') + condHTML(f, all) + '</label>' + ctl + help + '<p class="sh-err hidden"></p></div>';
+  }
+  /** 条件で必須の一言（例：「時間休」のとき必須） */
+  function condHTML(f, all) {
+    if (f.req || !f.reqIf || !f.reqIf.k) return '';
+    return '<span class="sh-cond">（' + esc(condLabel(f, all)) + 'のとき必須）</span>';
+  }
+  function condLabel(f, all) {
+    var src = (all || []).filter(function (x) { return x.k === f.reqIf.k; })[0];
+    return (src ? src.label + 'が' : '') + '「' + f.reqIf.v + '」';
+  }
+  /** 条件で必須の条件に当てはまるか */
+  function condMet(f, v) {
+    if (!f.reqIf || !f.reqIf.k) return false;
+    return String(v[f.reqIf.k] || '').split('\n').indexOf(f.reqIf.v) >= 0;
   }
   function openForm(typeId, prefill, resubmitOf) {
     var t = S.typeMap[typeId];
@@ -1552,8 +1600,8 @@
       box.innerHTML = head + '<p class="sh-note">患者様・利用者様のお名前は書かないでください（必要なときはIDで記入）。</p>' +
         '<form class="sh-form" id="shTheForm" novalidate><div class="sh-grid"><div class="sh-sect">申請者　' + esc(S.cfg.myName) + '</div>' +
         S.cfg.common.map(function (f) { return fieldHTML(f, F.values[f.k]); }).join('') +
-        '<div class="sh-sect">' + esc(t.label) + 'の内容</div>' +
-        t.fields.map(function (f) { return fieldHTML(f, F.values[f.k]); }).join('') +
+        (t.fields.length && t.fields[0].type === 'head' ? '' : '<div class="sh-sect">' + esc(t.label) + 'の内容</div>') +
+        t.fields.map(function (f) { return fieldHTML(f, F.values[f.k], t.fields); }).join('') +
         (t.range ? '<div class="sh-wide sh-calc" id="shCalc"></div>' : '') + '</div>' +
         '<div class="sh-actions"><button type="button" data-act="clear">入力をクリア</button><button type="submit" class="primary">確認へ進む</button></div></form>';
       updateCalc();
@@ -1570,7 +1618,14 @@
   }
   function readForm() {
     var v = {};
-    formDefs().forEach(function (f) { var el = $('sh-f-' + f.k); v[f.k] = el ? el.value.trim() : ''; });
+    formDefs().forEach(function (f) {
+      if (f.type === 'head') return;
+      var el = $('sh-f-' + f.k);
+      if (f.type === 'radio' || f.type === 'checks') {
+        // 複数選択は1行に1つ（サーバーも同じ形で受け取る）
+        v[f.k] = el ? Array.prototype.map.call(el.querySelectorAll('input:checked'), function (x) { return x.value; }).join('\n') : '';
+      } else v[f.k] = el ? el.value.trim() : '';
+    });
     return v;
   }
   function updateCalc() {
@@ -1592,9 +1647,14 @@
       var e = el.querySelector('.sh-err'); e.textContent = msg; e.classList.remove('hidden');
       first = first || el;
     }
-    formDefs().forEach(function (f) {
-      if (f.req && !v[f.k]) bad(f.k, f.type === 'select' ? '選択してください' : '入力してください');
+    var defs = formDefs();
+    defs.forEach(function (f) {
+      if (f.type === 'head') return;
+      var choose = CHOICE[f.type] ? '選択してください' : '入力してください';
+      if (f.req && !v[f.k]) bad(f.k, choose);
+      else if (!v[f.k] && condMet(f, v)) bad(f.k, condLabel(f, defs) + 'のときは' + (CHOICE[f.type] ? '選んでください' : '入力してください'));
       if (f.type === 'number' && v[f.k] && !/^\d{1,9}$/.test(v[f.k])) bad(f.k, '0以上の整数で入力してください');
+      if (f.type === 'time' && v[f.k] && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(v[f.k])) bad(f.k, '時刻を入れてください（例：13:30）');
     });
     if (t.range && v[t.range[0]] && v[t.range[1]] && v[t.range[1]] < v[t.range[0]]) bad(t.range[1], '開始の日付と同じか後の日付にしてください');
     if (first) { first.scrollIntoView({ block: 'center' }); var c = first.querySelector('input,select,textarea'); if (c) c.focus(); }
@@ -1647,7 +1707,7 @@
     (r.defs || []).forEach(function (f) {
       if (parts.length >= 2 || FIXED[f.k] || f.type === 'textarea') return;
       var v = r.fields[f.k];
-      if (v) parts.push(f.type === 'date' ? fmtDate(v) : f.type === 'number' ? Number(v).toLocaleString('ja-JP') + '円' : v);
+      if (v) parts.push(showVal(f, v).replace(' 円', '円'));
     });
     return parts.join('／');
   }
@@ -1782,7 +1842,7 @@
     var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
     var head = ['申請番号', '種類', '申請者ID', '申請者', '所属部署', '職種', '提出日時', '状況', '判定者', '判定日時', 'コメント', '再申請元', '内容'];
     var lines = recs.map(function (r) {
-      var body = (r.defs || []).filter(function (f) { return !FIXED[f.k]; }).map(function (f) { return f.label + '：' + showVal(f, r.fields[f.k]); }).join(' ／ ');
+      var body = (r.defs || []).filter(function (f) { return !FIXED[f.k] && f.type !== 'head' && r.fields[f.k] !== '' && r.fields[f.k] != null; }).map(function (f) { return f.label + '：' + showVal(f, r.fields[f.k]); }).join(' ／ ');
       return [r.no, r.typeLabel, r.applicantId, r.applicantName, r.dept, r.job, r.submittedAt, r.status, r.deciderName, r.decidedAt, r.comment, r.resubmitOf, body].map(q).join(',');
     });
     var d = new Date();
@@ -1871,10 +1931,13 @@
         return '<div class="sh-field"><div class="sh-frow"><div><label for="shEdF' + i + 'L">項目名</label><input type="text" id="shEdF' + i + 'L" data-fi="' + i + '" data-p="label" maxlength="40" value="' + esc(f.label) + '"></div>' +
           '<div><label for="shEdF' + i + 'T">入力の形</label><select id="shEdF' + i + 'T" data-fi="' + i + '" data-p="type">' + Object.keys(KINDS).map(function (k) {
             return '<option value="' + k + '"' + (k === f.type ? ' selected' : '') + '>' + KINDS[k] + '</option>'; }).join('') + '</select></div></div>' +
-          (f.type === 'select' ? '<label for="shEdF' + i + 'O">選択肢（1行に1つ）</label><textarea id="shEdF' + i + 'O" data-fi="' + i + '" data-p="opts" rows="4">' + esc((f.opts || []).join('\n')) + '</textarea>' : '') +
-          (f.type === 'date' || f.type === 'select' ? '' : '<label for="shEdF' + i + 'P">入力例（薄い字で出る）</label><input type="text" id="shEdF' + i + 'P" data-fi="' + i + '" data-p="ph" maxlength="80" value="' + esc(f.ph || '') + '">') +
-          '<div class="sh-checks"><label><input type="checkbox" data-fi="' + i + '" data-p="req"' + (f.req ? ' checked' : '') + '> 必須</label>' +
-          '<label><input type="checkbox" data-fi="' + i + '" data-p="wide"' + (f.wide ? ' checked' : '') + '> 横いっぱいに広げる</label>' +
+          (CHOICE[f.type] ? '<label for="shEdF' + i + 'O">選択肢（1行に1つ）</label><textarea id="shEdF' + i + 'O" data-fi="' + i + '" data-p="opts" rows="4">' + esc((f.opts || []).join('\n')) + '</textarea>' : '') +
+          (f.type === 'text' || f.type === 'textarea' || f.type === 'number' ? '<label for="shEdF' + i + 'P">入力例（薄い字で出る）</label><input type="text" id="shEdF' + i + 'P" data-fi="' + i + '" data-p="ph" maxlength="80" value="' + esc(f.ph || '') + '">' : '') +
+          '<label for="shEdF' + i + 'N">説明（' + (f.type === 'head' ? '見出しの下' : '入力欄の下') + 'に小さく出る・任意）</label><textarea id="shEdF' + i + 'N" data-fi="' + i + '" data-p="note" rows="2" maxlength="300" style="min-height:0">' + esc(f.note || '') + '</textarea>' +
+          (f.type === 'head' ? '' : condEditor(t, f, i)) +
+          '<div class="sh-checks">' + (f.type === 'head' ? '<span class="hint">見出しは入力欄ではありません。項目のまとまりの上に置きます。</span>'
+            : '<label><input type="checkbox" data-fi="' + i + '" data-p="req"' + (f.req ? ' checked' : '') + '> 必須</label>' +
+          '<label><input type="checkbox" data-fi="' + i + '" data-p="wide"' + (f.wide ? ' checked' : '') + '> 横いっぱいに広げる</label>') +
           '<span class="spacer"></span><span class="sh-btns">' +
           '<button class="small" data-ed="fup" data-i="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="上へ">↑</button>' +
           '<button class="small" data-ed="fdown" data-i="' + i + '"' + (i === t.fields.length - 1 ? ' disabled' : '') + ' aria-label="下へ">↓</button>' +
@@ -1887,6 +1950,18 @@
       '<div class="row" style="margin-top:16px"><span class="hint">使わないだけなら「職員の画面に表示する」を外せば隠せます。</span><span class="spacer"></span>' +
       '<button class="small danger" data-ed="tdel">この申請の種類を削除</button></div>' +
       saveBar();
+  }
+  /** 条件で必須：「○○」が「△△」のとき必須（選択の項目だけを条件にできる） */
+  function condEditor(t, f, i) {
+    var srcs = t.fields.filter(function (x) { return CHOICE[x.type] && x.k !== f.k; });
+    if (!srcs.length) return '';
+    var rk = f.reqIf && f.reqIf.k || '', src = srcs.filter(function (x) { return x.k === rk; })[0];
+    return '<div class="sh-pair"><div><label for="shEdF' + i + 'CK">条件で必須（任意）</label><select id="shEdF' + i + 'CK" data-fi="' + i + '" data-p="reqIfK">' +
+      '<option value="">（なし）</option>' + srcs.map(function (x) {
+        return '<option value="' + esc(x.k) + '"' + (x.k === rk ? ' selected' : '') + '>' + esc(x.label || '（名前なし）') + 'が</option>'; }).join('') + '</select></div>' +
+      '<div><label for="shEdF' + i + 'CV">次の値のとき</label><select id="shEdF' + i + 'CV" data-fi="' + i + '" data-p="reqIfV"' + (src ? '' : ' disabled') + '>' +
+      (src ? (src.opts || []).filter(String).map(function (o) { return '<option' + (o === f.reqIf.v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') : '<option value="">—</option>') +
+      '</select></div></div>';
   }
   function catNames(ids) {
     return (ids || []).map(function (id) { var c = S.cats.filter(function (x) { return x.id === id; })[0]; return c ? c.name : id; }).join('・');
@@ -1924,13 +1999,24 @@
       var fld = t.fields[+fi], p = el.getAttribute('data-p');
       if (el.type === 'checkbox') fld[p] = el.checked;
       else if (p === 'opts') fld.opts = el.value.split('\n');
+      else if (p === 'reqIfK') {
+        var sf = t.fields.filter(function (x) { return x.k === el.value; })[0];
+        fld.reqIf = sf ? { k: sf.k, v: ((sf.opts || []).filter(String)[0] || '') } : null;
+      }
+      else if (p === 'reqIfV') { if (fld.reqIf) fld.reqIf.v = el.value; }
       else fld[p] = el.value;
       dirty();
+      if (p === 'reqIfK' && isChange) renderTypeEditor();
       if (p === 'type' && isChange) {
-        if (fld.type === 'select' && !(fld.opts && fld.opts.filter(String).length)) fld.opts = ['選択肢1', '選択肢2'];
+        if (CHOICE[fld.type] && !(fld.opts && fld.opts.filter(String).length)) fld.opts = ['選択肢1', '選択肢2'];
         if (t.range && t.range.indexOf(fld.k) >= 0 && fld.type !== 'date') t.range = null;
+        if (fld.type === 'head') { fld.req = false; fld.reqIf = null; }
+        // 選択でなくなった項目を条件にしていた項目は、条件を外す
+        if (!CHOICE[fld.type]) t.fields.forEach(function (x) { if (x.reqIf && x.reqIf.k === fld.k) x.reqIf = null; });
         renderTypeEditor();
       }
+      // 選択肢を変えたら、条件の値の一覧を作り直す（入力中は打ち直さない）
+      if (p === 'opts' && isChange && t.fields.some(function (x) { return x.reqIf && x.reqIf.k === fld.k; })) renderTypeEditor();
     }
   }
   // ボタン
@@ -1959,6 +2045,7 @@
       case 'fdel':
         var fk = t.fields[i].k;
         t.fields.splice(i, 1);
+        t.fields.forEach(function (x) { if (x.reqIf && x.reqIf.k === fk) x.reqIf = null; });
         if (t.range && t.range.indexOf(fk) >= 0) t.range = null;
         dirty(); renderTypeEditor();
         break;
