@@ -1178,17 +1178,12 @@
   .tk-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
   .tk-tools input[type=search] { flex: 1 1 180px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 14px; }
   .tk-tools label { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; }
-  .tk-sorts select { width: auto; flex: 0 1 auto; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 13px; background: var(--card); color: var(--text); max-width: 100%; }
-  .tk-sorts select.on { border-color: var(--primary); background: var(--primary-light, #e6f0ec); font-weight: bold; }
-  .tk-count { font-size: 13px; color: var(--muted); }
-  #tkClearF.hidden { display: none; }
-  @media (max-width: 600px) { .tk-sorts { gap: 6px; } .tk-sorts select { flex: 1 1 100%; } }
   .tk-list { list-style: none; margin: 0; padding: 0; }
   .tk-list li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--line); }
   .tk-list li:last-child { border-bottom: 0; }
   .tk-list input[type=checkbox] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--primary); }
   .tk-list .tk-nocheck { width: 20px; flex: none; }
-  .tk-open { display: block; flex: 1; min-width: 0; border: 0; background: none; box-shadow: none; padding: 0; text-align: left; height: auto; transform: none; font: inherit; color: inherit; cursor: pointer; }
+  .tk-open { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
   .tk-open b { display: block; overflow-wrap: anywhere; }
   .tk-open:hover b { color: var(--primary); }
   .tk-done b { text-decoration: line-through; color: var(--muted); }
@@ -1238,36 +1233,6 @@
     <div class="tk-tools">
       <input type="search" id="tkQ" placeholder="件名・担当者で絞り込み" aria-label="絞り込み">
       <label><input type="checkbox" id="tkShowDone"> 完了も表示</label>
-    </div>
-    <div class="tk-tools tk-sorts">
-      <select id="tkDueF" aria-label="期限で絞り込み">
-        <option value="">期限：すべて</option>
-        <option value="late">期限：期限切れ</option>
-        <option value="today">期限：今日まで（期限切れも）</option>
-        <option value="3">期限：3日以内（期限切れも）</option>
-        <option value="7">期限：1週間以内（期限切れも）</option>
-        <option value="14">期限：2週間以内（期限切れも）</option>
-        <option value="month">期限：今月中（期限切れも）</option>
-        <option value="none">期限：期限なし</option>
-      </select>
-      <select id="tkStatF" aria-label="状態で絞り込み">
-        <option value="">状態：すべて</option>
-        <option value="未着手">状態：未着手</option>
-        <option value="進行中">状態：進行中</option>
-        <option value="mark">状態：お知らせあり（新しい依頼・報告）</option>
-      </select>
-      <select id="tkSort" aria-label="並び順">
-        <option value="due">並び：期限が近い順</option>
-        <option value="dueDesc">並び：期限が遠い順</option>
-        <option value="new">並び：登録が新しい順</option>
-        <option value="old">並び：登録が古い順</option>
-        <option value="upd">並び：更新が新しい順</option>
-        <option value="title">並び：件名順</option>
-        <option value="assignee">並び：担当者順</option>
-        <option value="creator">並び：依頼した人順</option>
-      </select>
-      <span class="tk-count" id="tkCount"></span>
-      <button class="small" id="tkClearF" type="button">条件を戻す</button>
     </div>
     <ul class="tk-list" id="tkList"></ul>
     <p class="hint" id="tkNote"></p>
@@ -1376,48 +1341,6 @@
     if (t.assignee.toLowerCase() !== t.creator.toLowerCase()) return '担当者と頼んだ人だけ';
     return '自分だけ';
   }
-  // ---- 絞り込み・並び順（2026-11-19）----
-  function addDays(ymd, n) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd); var d = new Date(+m[1], m[2] - 1, +m[3] + n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-  function dueMatch(t, f) {
-    if (!f) return true;
-    if (f === 'none') return !t.due;
-    if (!t.due) return false;
-    var td = today();
-    if (f === 'late') return t.status !== '完了' && t.due < td;
-    var end = f === 'today' ? td : f === 'month' ? td.slice(0, 8) + '31' : addDays(td, +f);
-    return t.due <= end && (t.due >= td || t.status !== '完了');   // 期限切れ（まだ終わっていないもの）も含める
-  }
-  function statMatch(t, f) { return !f || (f === 'mark' ? !!t.mark : t.status === f); }
-  function sortTasks(list, by) {
-    var cmp = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
-    var done = function (t) { return t.status === '完了' ? 1 : 0; };
-    var dueKey = function (t, far) { return t.due || (far ? '' : '9999-99-99'); };
-    var f = {
-      due: function (a, b) { return cmp(dueKey(a), dueKey(b)); },
-      dueDesc: function (a, b) { return cmp(dueKey(b, true), dueKey(a, true)); },
-      'new': function (a, b) { return b.id - a.id; },
-      old: function (a, b) { return a.id - b.id; },
-      upd: function (a, b) { return cmp(b.updatedAt, a.updatedAt); },
-      title: function (a, b) { return a.title.localeCompare(b.title, 'ja'); },
-      assignee: function (a, b) { return a.assigneeName.localeCompare(b.assigneeName, 'ja') || cmp(dueKey(a), dueKey(b)); },
-      creator: function (a, b) { return a.creatorName.localeCompare(b.creatorName, 'ja') || cmp(dueKey(a), dueKey(b)); },
-    }[by] || function () { return 0; };
-    // 完了は下に。同じなら新しい順
-    return list.slice().sort(function (a, b) { return (done(a) - done(b)) || f(a, b) || (b.id - a.id); });
-  }
-  var FKEY = 'tkFilters';
-  function saveFilters() {
-    try { localStorage.setItem(FKEY, JSON.stringify({ due: $('tkDueF').value, stat: $('tkStatF').value, sort: $('tkSort').value })); } catch (e) {}
-  }
-  (function restoreFilters() {
-    try {
-      var v = JSON.parse(localStorage.getItem(FKEY) || '{}');
-      [['tkDueF', v.due], ['tkStatF', v.stat], ['tkSort', v.sort]].forEach(function (x) {
-        if (x[1] && [].some.call($(x[0]).options, function (o) { return o.value === x[1]; })) $(x[0]).value = x[1];
-      });
-    } catch (e) {}
-  })();
-
   function render() {
     if (!T.loaded) return;
     var defs = tabDefs();
@@ -1427,18 +1350,10 @@
       return '<button data-tab="' + d[0] + '" class="' + (T.tab === d[0] ? 'active' : '') + '">' + d[1] + (n ? '<span class="tk-badge">' + n + '</span>' : '') + '</button>';
     }).join('');
     var q = $('tkQ').value.trim().toLowerCase(), showDone = $('tkShowDone').checked;
-    var dueF = $('tkDueF').value, statF = $('tkStatF').value, sortBy = $('tkSort').value;
     var list = T.tasks.filter(function (t) {
       return inTab(t, T.tab) && (showDone || t.status !== '完了') &&
-        (!q || [t.title, t.assigneeName, t.creatorName].join(' ').toLowerCase().indexOf(q) >= 0) &&
-        dueMatch(t, dueF) && statMatch(t, statF);
+        (!q || [t.title, t.assigneeName, t.creatorName].join(' ').toLowerCase().indexOf(q) >= 0);
     });
-    list = sortTasks(list, sortBy);
-    saveFilters();
-    ['tkDueF', 'tkStatF', 'tkSort'].forEach(function (id) { $(id).classList.toggle('on', $(id).selectedIndex > 0); });
-    var filtered = dueF || statF || q;
-    $('tkCount').textContent = list.length + ' 件' + (filtered ? '（絞り込み中）' : '');
-    $('tkClearF').classList.toggle('hidden', !(dueF || statF || sortBy !== 'due' || q));
     var hiddenDone = T.tasks.filter(function (t) { return inTab(t, T.tab) && t.status === '完了'; }).length;
     $('tkList').innerHTML = list.length ? list.map(function (t) {
       var who = T.tab === 'mine' ? (isAsked(t) || t.creator.toLowerCase() === T.me.id.toLowerCase() ? '' : '依頼：' + esc(t.creatorName))
@@ -1450,14 +1365,12 @@
         (t.status === '進行中' ? '<span class="tk-chip prog">進行中</span>' : '') + dueChip(t) +
         (who ? '<span>' + who + '</span>' : '') + '<span>公開：' + visText(t) + '</span>' +
         (t.notes ? '<span>連絡 ' + t.notes + '件</span>' : '') + '</span></button></li>';
-    }).join('') : (dueF || statF || q) ? '<li class="tk-empty">条件に合うタスクはありません。「条件を戻す」で全部出ます。</li>' : '<li class="tk-empty">' + (T.tab === 'mine' ? 'いまのタスクはありません。「＋ 新しいタスク」から登録できます。' : T.tab === 'asked' ? '依頼中のタスクはありません。' : '見られるタスクはありません。') + '</li>';
+    }).join('') : '<li class="tk-empty">' + (T.tab === 'mine' ? 'いまのタスクはありません。「＋ 新しいタスク」から登録できます。' : T.tab === 'asked' ? '依頼中のタスクはありません。' : '見られるタスクはありません。') + '</li>';
     $('tkNote').textContent = !showDone && hiddenDone ? '完了したタスクが ' + hiddenDone + ' 件あります（「完了も表示」で出ます）。' : '';
   }
   $('tkTabs').addEventListener('click', function (e) { var b = e.target.closest('[data-tab]'); if (b) { T.tab = b.getAttribute('data-tab'); render(); } });
   $('tkQ').addEventListener('input', render);
   $('tkShowDone').addEventListener('change', render);
-  ['tkDueF', 'tkStatF', 'tkSort'].forEach(function (id) { $(id).addEventListener('change', render); });
-  $('tkClearF').addEventListener('click', function () { $('tkDueF').value = ''; $('tkStatF').value = ''; $('tkSort').value = 'due'; $('tkQ').value = ''; render(); });
   $('tkList').addEventListener('change', function (e) {
     var c = e.target.closest('[data-done]'); if (!c) return;
     var id = c.getAttribute('data-done');
@@ -1761,7 +1674,7 @@
 </style>
 <script>
   (function () {
-    var ROLES = [{"id": "rijicho", "label": "理事長", "note": "管理者・全部見える"}, {"id": "jimucho", "label": "事務長", "note": "管理者・承認する"}, {"id": "kasuga", "label": "春日（事務）", "note": "一般・依頼される側"}, {"id": "kango", "label": "看護の職員", "note": "一般・申請を出す側"}, {"id": "ishi", "label": "医師", "note": "一般・医師休暇申請が出せる"}];
+    var ROLES = [{"id": "rijicho", "label": "理事長", "note": "管理者・全部見える"}, {"id": "jimucho", "label": "事務長", "note": "管理者・承認する"}, {"id": "kasuga", "label": "一般職員", "note": "一般・依頼される側"}, {"id": "kango", "label": "看護の職員", "note": "一般・申請を出す側"}, {"id": "ishi", "label": "医師", "note": "一般・医師休暇申請が出せる"}];
     var PW = "test1234";
     var current = '';
 
