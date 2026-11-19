@@ -2146,7 +2146,26 @@
   #testRoleLogin button small { display: block; color: #667085; font-size: 11px; margin-top: 2px; }
 </style>
 <script>
+  // 置き場所の確認（2026-11-19：試し用の画面を本番の場所に上げてしまったことがあったため）
+  // GitHub Pages では /test/ の中にあるときだけ動く。手元の確認（localhost・ファイル）はそのまま動く
+  window.__placeOk = (function () {
+    var h = location.hostname, path = location.pathname;
+    if (location.protocol === 'file:' || h === 'localhost' || h === '127.0.0.1') return true;
+    return /\/test\//.test(path);
+  })();
+  if (!window.__placeOk) {
+    var stop = document.createElement('div');
+    stop.id = 'placeStop';
+    stop.setAttribute('style', 'position:fixed;inset:0;z-index:9999;background:#b42318;color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-size:17px;line-height:1.8;font-weight:700');
+    stop.innerHTML = '<div>これは<u>試し用</u>の画面です。本番の場所に置かれているため、止めています。<br>' +
+      '<span style="font-size:14px;font-weight:400">GitHub のいちばん上（本番）には、ZIP の <b>supabase/dist/</b> の shinsei.html・tasks.html を上げてください。<br>' +
+      '試し用の画面（supabase/dist-test/）は <b>test/</b> フォルダに上げます。</span></div>';
+    document.body.appendChild(stop);
+    // 試し用のデータベースにつながらないよう、ログインもできなくする
+    document.querySelectorAll('#view-login input, #view-login button').forEach(function (el) { el.disabled = true; });
+  }
   (function () {
+    if (!window.__placeOk) return;
     var ROLES = [{"id": "rijicho", "label": "理事長", "note": "管理者・全部見える"}, {"id": "jimucho", "label": "事務長", "note": "管理者・承認する"}, {"id": "kasuga", "label": "一般職員", "note": "一般・依頼される側"}, {"id": "kango", "label": "看護の職員", "note": "一般・申請を出す側"}, {"id": "ishi", "label": "医師", "note": "一般・医師休暇申請が出せる"}];
     var PW = "test1234";
     var current = '';
