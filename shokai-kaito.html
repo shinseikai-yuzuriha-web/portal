@@ -64,6 +64,7 @@
     </div>
 
     <button class="btn main" id="save">PDFで保存</button>
+    <div class="note">iPadでは保存のときに共有の画面が出ます。「"ファイル"に保存」を選んでください。</div>
     <div class="note" style="margin-top:6px">保存したPDFを、モバカルのFAX送信で送ってください。</div>
     <div id="msg"></div>
   </div>
@@ -293,6 +294,11 @@
   }
   function later() { clearTimeout(timer); timer = setTimeout(show, 150); }
   ['tName', 'tDate', 'tBody'].forEach(function (id) { $(id).addEventListener('input', later); });
+  // ツクシの文の先頭の「患者番号＋カナ氏名」の行は回答に要らないので外す
+  $('tBody').addEventListener('input', function () {
+    var v = this.value, m = v.match(/^\s*\d{3,}\s*[ァ-ヶー・\s　]+?\s*\n/);
+    if (m) { this.value = v.slice(m[0].length); setTimeout(function () { msg('先頭の患者番号・氏名の行は外しました。'); }, 200); }
+  });
   $('tName').addEventListener('change', function () { try { localStorage.setItem('shokaiKaitoName', this.value); } catch (e) {} });
   $('bw').onchange = show;
   $('reset').onclick = function () { pos = JSON.parse(JSON.stringify(DEFAULT)); savePos(); show(); };
@@ -356,11 +362,28 @@
     var r = compose(true);
     if (!r.ok && !confirm('回答内容が枠に収まりきっていません。このまま保存しますか？')) return;
     var d = new Date(), z = function (n) { return ('0' + n).slice(-2); };
+    var name = '照会回答_' + z(d.getMonth() + 1) + z(d.getDate()) + '_' + z(d.getHours()) + z(d.getMinutes()) + '.pdf';
+    var blob = makePdf(r.canvas);
+    // iPad・iPhone：共有シートを出す（「"ファイル"に保存」で保存）
+    var ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (ios && navigator.canShare) {
+      var file = new File([blob], name, { type: 'application/pdf' });
+      if (navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file] }).then(function () {
+          msg('共有しました：' + name);
+        }).catch(function (e) {
+          if (e && e.name === 'AbortError') msg('キャンセルしました。');
+          else msg('共有できませんでした：' + (e && e.message));
+        });
+        msg('出てきた画面で「"ファイル"に保存」を選んでください。');
+        return;
+      }
+    }
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(makePdf(r.canvas));
-    a.download = '照会回答_' + z(d.getMonth() + 1) + z(d.getDate()) + '_' + z(d.getHours()) + z(d.getMinutes()) + '.pdf';
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
-    msg('保存しました：' + a.download);
+    msg('保存しました：' + name);
   };
   window.__shokai = { loadFile: loadFile, compose: compose, makePdf: makePdf };
 })();
