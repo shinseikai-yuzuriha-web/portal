@@ -193,15 +193,15 @@
   .test-done .mm { background: #f4f5f7; border-radius: 12px; padding: 12px 14px; font-size: 16px; border-left: 4px solid #1c58d9; }
   .test-done .mm-who { font-weight: 700; color: #1c58d9; font-size: 14px; }
   .test-done .mmtext { white-space: pre-wrap; }
+  .sub-q { margin-top: 18px; }
   .test-done a.btn { text-align: center; line-height: 64px; text-decoration: none; }
 </style>
 </head>
 <body>
 <div class="test-band" id="testBand" hidden>
   <div class="tb-row"><strong>試し用</strong><span>送った内容はこの端末の中だけ。本物には届きません。</span></div>
-  <div class="tb-row tb-switch">選択肢：
-    <a data-p="A">パターンA（3つ）</a><a data-p="B">パターンB（6つ）</a>
-    <a href="yorozu-admin.html?test" class="tb-admin">管理画面（試し）へ</a>
+  <div class="tb-row tb-switch">
+    <a href="yorozu-admin.html?test" class="tb-admin">届いた相談を見る（管理画面・試し）へ</a>
   </div>
 </div>
 <div class="wrap">
@@ -214,26 +214,8 @@
 
   <!-- 入力 -->
   <form id="form" novalidate>
-    <section class="card" id="q-kinds">
-      <h2><span class="num">01</span>ご相談の内容<span class="req">必須</span></h2>
-      <p class="hint">あてはまるものを、いくつでも押してください。</p>
-      <div class="choices" id="kinds"></div>
-      <div class="err">ご相談の内容を1つ以上選んでください</div>
-    </section>
-
     <section class="card">
-      <h2><span class="num">02</span>くわしい内容<span class="opt">任意</span></h2>
-      <p class="hint">わかる範囲でかまいません。</p>
-      <textarea id="detail" maxlength="3000" placeholder="例）母が一人で通院するのが難しくなってきました。家に来てもらえる先生はいますか。"></textarea>
-    </section>
-
-    <section class="card">
-      <h2><span class="num">03</span>ご相談されるのは</h2>
-      <div class="choices row3" id="relation" role="radiogroup" aria-label="ご相談されるのは"></div>
-    </section>
-
-    <section class="card">
-      <h2><span class="num">04</span>ご連絡先</h2>
+      <h2><span class="num">01</span>ご相談者の情報</h2>
       <label class="field" id="q-name">
         <span class="label">お名前<span class="req">必須</span></span>
         <input type="text" id="name" autocomplete="name" maxlength="100">
@@ -249,16 +231,33 @@
         <input type="email" id="email" autocomplete="email" maxlength="200">
         <div class="err">メールアドレスの形を確かめてください</div>
       </label>
+      <div class="field sub-q">
+        <span class="label">ご相談されるのは</span>
+        <div class="choices row3" id="relation" role="radiogroup" aria-label="ご相談されるのは"></div>
+      </div>
       <div class="hp" aria-hidden="true"><label>website<input type="text" id="website" tabindex="-1" autocomplete="off"></label></div>
     </section>
 
     <section class="card">
-      <h2><span class="num">05</span>ご連絡の方法</h2>
+      <h2><span class="num">02</span>ご連絡の方法</h2>
       <div class="choices row3" id="method" role="radiogroup" aria-label="ご連絡の方法"></div>
       <label class="field">
         <span class="label">都合のよい曜日・時間帯<span class="opt">任意</span></span>
         <input type="text" id="contact_time" maxlength="200" placeholder="例）平日の午前中">
       </label>
+    </section>
+
+    <section class="card" id="q-kinds">
+      <h2><span class="num">03</span>ご相談の内容<span class="req">必須</span></h2>
+      <p class="hint">あてはまるものを、いくつでも押してください。</p>
+      <div class="choices" id="kinds"></div>
+      <div class="err">ご相談の内容を1つ以上選んでください</div>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">04</span>くわしい内容<span class="opt">任意</span></h2>
+      <p class="hint">わかる範囲でかまいません。「その他」を選んだ方は、こちらに書いてください。</p>
+      <textarea id="detail" maxlength="3000" placeholder="例）母が一人で通院するのが難しくなってきました。家に来てもらえる先生はいますか。"></textarea>
     </section>
 
     <div class="privacy">入力いただいた情報は、ご相談への対応にのみ使います。</div>
@@ -305,12 +304,12 @@ const SUPABASE_ANON_KEY = '__SUPABASE_ANON_KEY__';
 
 // 相談内容の選択肢のパターン（本番で使う方を FORM_PATTERN に書く）
 //   A：春日さん案（3つ。例を添える）  B：くわしく分ける（6つ）
-const FORM_PATTERN = 'B';
+const FORM_PATTERN = 'B';  // 2026-11-26 先生の意見で B（6つ）に決定
 const PATTERNS = {
   A: [
     ['医療保険に関すること', '例）医療費、受診のしかた、訪問診療'],
     ['介護保険・介護サービスに関すること', '例）要介護認定、ケアマネジャー、デイサービス'],
-    ['その他、医療・介護・福祉のサービスに関すること', '例）有料老人ホーム・施設探し、福祉の制度'],
+    ['その他', '例）有料老人ホーム・施設探し、福祉の制度'],
   ],
   B: [
     ['医療保険に関すること'],
@@ -318,7 +317,7 @@ const PATTERNS = {
     ['訪問診療・通院が難しくなったこと'],
     ['有料老人ホーム・施設を探している'],
     ['ケアマネジャーを探している'],
-    ['その他、医療・介護・福祉のサービスに関すること'],
+    ['その他'],
   ],
 };
 const PARAMS = new URLSearchParams(location.search);
@@ -375,10 +374,10 @@ function collect() {
 
 function validate(d) {
   const bad = [];
-  if (!d.kinds.length) bad.push('q-kinds');
   if (!d.name) bad.push('q-name');
   if (digits(d.phone).length < 10) bad.push('q-phone');
   if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) bad.push('q-email');
+  if (!d.kinds.length) bad.push('q-kinds');
   document.querySelectorAll('.has-err').forEach(e => e.classList.remove('has-err'));
   bad.forEach(id => $(id).classList.add('has-err'));
   if (bad.length) $(bad[0]).scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -392,14 +391,14 @@ $('form').addEventListener('submit', (e) => {
   if (!validate(d)) return;
   data = d;
   const rows = [
-    ['ご相談の内容', d.kinds.join('\n')],
-    ['くわしい内容', d.detail || '（なし）'],
-    ['ご相談されるのは', d.relation || '（選択なし）'],
     ['お名前', d.name],
     ['電話番号', d.phone],
     ['メールアドレス', d.email || '（なし）'],
+    ['ご相談されるのは', d.relation || '（選択なし）'],
     ['ご連絡の方法', d.contact_method || '（選択なし）'],
     ['都合のよい曜日・時間帯', d.contact_time || '（なし）'],
+    ['ご相談の内容', d.kinds.join('\n')],
+    ['くわしい内容', d.detail || '（なし）'],
   ];
   const dl = $('confirmList'); dl.innerHTML = '';
   rows.forEach(([k, v]) => {
