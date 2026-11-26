@@ -265,8 +265,8 @@
 <script src="yorozu-mock.js"></script>
 <script>
 // ===== 接続先（Supabase の Project URL と anon キー） =====
-const SUPABASE_URL = '__SUPABASE_URL__';
-const SUPABASE_ANON_KEY = '__SUPABASE_ANON_KEY__';
+const SUPABASE_URL = 'https://lzkeaetpykhdrwwwspjy.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6a2VhZXRweWtoZHJ3d3dzcGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNDM3MTgsImV4cCI6MjEwOTgxOTcxOH0.w_iThhR7s9ZF2R_Co3OIedwdQcsFGSb7WqX4TTTE0uM';
 
 const TEST = new URLSearchParams(location.search).has('test') || SUPABASE_URL.startsWith('__');
 const $ = (id) => document.getElementById(id);
