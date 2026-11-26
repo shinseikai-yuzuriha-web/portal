@@ -9,7 +9,7 @@
     '訪問診療・通院が難しくなったこと',
     '有料老人ホーム・施設を探している',
     'ケアマネジャーを探している',
-    'その他、医療・介護・福祉のサービスに関すること',
+    'その他',
   ];
   let memory = null;
 
@@ -80,7 +80,7 @@
         detail: p.detail || null, contact_method: p.contact_method || null, contact_time: p.contact_time || null,
         status: '未対応', assignee_id: null, updated_at: now(), done_at: null, pattern: p.pattern || null,
       });
-      notify(db, '#### 📮 よろず相談に新しい相談が届きました（Y' + id + '）\n種類：' + kinds.join('、') + '\n[管理画面で見る](' + adminUrl() + '#Y' + id + ')');
+      notify(db, '#### 📮 よろず相談室に新しい相談が届きました（Y' + id + '）\n種類：' + kinds.join('、') + '\n[管理画面で見る](' + adminUrl() + '#Y' + id + ')');
       return { ok: true, no: 'Y' + id };
     },
     yorozu_login(db, { p_pin, p_staff_id }) {
@@ -114,7 +114,7 @@
       if (old.assignee_id !== p_assignee_id) {
         log(db, me.id, '担当', p_id, asg ? asg.name : '（なし）');
         if (asg && asg.id !== me.id) {
-          notify(db, '📮 よろず相談 Y' + p_id + ' の担当になりました：' + (asg.mm_username ? '@' + asg.mm_username : asg.name + ' さん') +
+          notify(db, '📮 よろず相談室 Y' + p_id + ' の担当になりました：' + (asg.mm_username ? '@' + asg.mm_username : asg.name + ' さん') +
             '（' + me.name + ' さんより）\n[管理画面で見る](' + adminUrl() + '#Y' + p_id + ')');
         }
       }
@@ -177,7 +177,7 @@
         ['宮城 健一', '098-333-4444', ['介護保険・介護サービスに関すること', 'ケアマネジャーを探している'], '父の介護認定の申し込みのしかたが分かりません。', 'ご家族', 'どちらでもよい', ''],
         ['照屋 光子', '080-5555-6666', ['有料老人ホーム・施設を探している'], '一人暮らしが不安なので、入れる施設を探しています。費用も知りたいです。', 'ご本人', '電話', '午前中'],
         ['仲村 誠', '090-7777-8888', ['医療保険に関すること'], '医療費の上限の制度について知りたい。', 'ご本人', 'メール', ''],
-        ['比嘉 美代', '098-999-0000', ['その他、医療・介護・福祉のサービスに関すること'], '近所の高齢の方のことで相談したいです。', 'その他', '電話', '平日'],
+        ['比嘉 美代', '098-999-0000', ['その他'], '近所の高齢の方のことで相談したいです。', 'その他', '電話', '平日'],
       ];
       samples.forEach((s, i) => {
         const id = ++db.seq.case;
