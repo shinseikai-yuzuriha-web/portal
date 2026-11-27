@@ -2,7 +2,7 @@
 // データはこの端末のブラウザの中だけ（localStorage）。Supabase にも Mattermost にも届かない。
 // yorozu.sql の関数と同じ動きをまねている。
 (function () {
-  const KEY = 'yorozu_test_db_v1';
+  const KEY = 'yorozu_test_db_v2';
   const KINDS = [
     '医療保険に関すること',
     '介護保険・介護サービスに関すること',
@@ -19,10 +19,11 @@
 
   function fresh() {
     return {
-      seq: { case: 0, note: 0, staff: 2, log: 0 },
+      seq: { case: 0, note: 0, staff: 3, log: 0 },
       staff: [
         { id: 1, name: '理事長', is_admin: true, active: true, mm_username: 'rijicho' },
-        { id: 2, name: '春日', is_admin: false, active: true, mm_username: 'kasuga' },
+        { id: 2, name: '春日', is_admin: true, active: true, mm_username: 'kasuga' },
+        { id: 3, name: '職員', is_admin: false, active: true, mm_username: 'staff' },
       ],
       cases: [], notes: [], logs: [], mm: [], sessions: {},
     };
@@ -188,8 +189,8 @@
         const t = new Date(Date.now() - (samples.length - i) * 3600e3 * 7).toISOString();
         db.cases.push({ id, created_at: t, name: s[0], phone: s[1], email: s[5] === 'メール' ? 'sample@example.com' : null, relation: s[4], kinds: s[2],
           detail: s[3], contact_method: s[5], contact_time: s[6] || null, status: i < 2 ? '対応中' : '未対応',
-          assignee_id: i < 2 ? 2 : null, updated_at: t, done_at: null });
-        if (i === 0) db.notes.push({ id: ++db.seq.note, case_id: id, staff_id: 2, body: '電話しました。訪問診療の流れを説明。来週、先生と訪問予定。', created_at: t });
+          assignee_id: i < 2 ? 3 : null, updated_at: t, done_at: null });
+        if (i === 0) db.notes.push({ id: ++db.seq.note, case_id: id, staff_id: 3, body: '電話しました。訪問診療の流れを説明。来週、先生と訪問予定。', created_at: t });
       });
       save(db);
     },
